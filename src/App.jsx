@@ -4,12 +4,13 @@ import { compressImage } from './utils/imageCompressor';
 import AltImage from './components/AltImage';
 import AutomatedCampaignsDashboard from './components/AutomatedCampaignsDashboard';
 import HomepageManagerDashboard from './components/HomepageManagerDashboard';
+import WhatsAppAIDashboard from './components/WhatsAppAIDashboard';
 import {
   Settings, Save, AlertCircle, Package, Search, X, Edit, Tags,
   Image as ImageIcon, Database, Info, ShoppingCart, Phone, Mail,
   Send, CheckSquare, Square, Sparkles, Upload, Wand2, Plus,
   Layers, Trash2, LayoutDashboard, ChevronRight, Eye, ChevronDown, ChevronUp,
-  Truck, Clock, ArrowLeftRight, PackageCheck, Percent, RefreshCw
+  Truck, Clock, ArrowLeftRight, PackageCheck, Percent, RefreshCw, Zap, Menu
 } from 'lucide-react';
 
 // Axios request interceptor to dynamically inject target credentials
@@ -33,8 +34,9 @@ export default function App() {
 
   const isConfigured = !!storeUrl && !!accessToken;
 
-  const [activeTab, setActiveTab] = useState('products');
+  const [activeTab, setActiveTab] = useState('whatsapp-ai');
   const [showSettings, setShowSettings] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const [products, setProducts] = useState([]);
   const [locations, setLocations] = useState([]);
@@ -328,8 +330,8 @@ export default function App() {
 
   return (
     <div className="h-screen bg-[#0F172A] text-slate-100 font-sans flex overflow-hidden">
-      {/* LEFT SIDEBAR - PREMIUM DESIGN */}
-      <aside className="w-64 bg-[#1E293B] border-r border-slate-800 flex flex-col shrink-0">
+      {/* LEFT SIDEBAR - PREMIUM DESIGN (HIDDEN ON MOBILE, FULL ON DESKTOP) */}
+      <aside className="hidden md:flex w-64 bg-[#1E293B] border-r border-slate-800 flex-col shrink-0">
         <div className="p-6 border-b border-slate-800 flex items-center gap-3">
           {storeLogoUrl ? (
             <img src={storeLogoUrl} alt={storeName || 'Store Logo'} className="w-10 h-10 object-contain rounded-lg bg-slate-900 border border-slate-700 p-1 shrink-0" />
@@ -344,7 +346,7 @@ export default function App() {
           </div>
         </div>
 
-        <nav className="flex-1 p-4 space-y-1">
+        <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
           <button
             onClick={() => setActiveTab('products')}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all duration-200 ${activeTab === 'products' ? 'bg-gradient-to-r from-yellow-500/10 to-amber-500/5 text-yellow-500 border border-yellow-500/20' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200 border border-transparent'}`}
@@ -364,16 +366,16 @@ export default function App() {
             <Truck className="w-4 h-4" /> Delivery Pipeline
           </button>
           <button
-            onClick={() => setActiveTab('bulk-editor')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all duration-200 ${activeTab === 'bulk-editor' ? 'bg-gradient-to-r from-yellow-500/10 to-amber-500/5 text-yellow-500 border border-yellow-500/20' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200 border border-transparent'}`}
+            onClick={() => setActiveTab('bulk')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all duration-200 ${activeTab === 'bulk' ? 'bg-gradient-to-r from-yellow-500/10 to-amber-500/5 text-yellow-500 border border-yellow-500/20' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200 border border-transparent'}`}
           >
             <Percent className="w-4 h-4" /> Bulk Price Editor
           </button>
           <button
-            onClick={() => setActiveTab('seo-optimizer')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all duration-200 ${activeTab === 'seo-optimizer' ? 'bg-gradient-to-r from-yellow-500/10 to-amber-500/5 text-yellow-500 border border-yellow-500/20' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200 border border-transparent'}`}
+            onClick={() => setActiveTab('seo')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all duration-200 ${activeTab === 'seo' ? 'bg-gradient-to-r from-yellow-500/10 to-amber-500/5 text-yellow-500 border border-yellow-500/20' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200 border border-transparent'}`}
           >
-            <Sparkles className="w-4 h-4" /> AI SEO Optimizer
+            <Wand2 className="w-4 h-4" /> AI SEO Optimizer
           </button>
           <button
             onClick={() => setActiveTab('alt-tagger')}
@@ -405,6 +407,12 @@ export default function App() {
           >
             <LayoutDashboard className="w-4 h-4" /> Homepage Manager
           </button>
+          <button
+            onClick={() => setActiveTab('whatsapp-ai')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all duration-200 ${activeTab === 'whatsapp-ai' ? 'bg-gradient-to-r from-emerald-500/10 to-teal-500/5 text-emerald-400 border border-emerald-500/20' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200 border border-transparent'}`}
+          >
+            <Zap className="w-4 h-4 text-emerald-400" /> WhatsApp AI Logs
+          </button>
 
         </nav>
 
@@ -425,14 +433,114 @@ export default function App() {
         </div>
       </aside>
 
+      {/* MOBILE OVERLAY DRAWER SIDEBAR */}
+      {mobileMenuOpen && (
+        <div className="fixed inset-0 z-50 flex md:hidden">
+          <div
+            className="fixed inset-0 bg-black/75 backdrop-blur-sm"
+            onClick={() => setMobileMenuOpen(false)}
+          />
+          <aside className="relative w-72 max-w-[85vw] bg-[#1E293B] border-r border-slate-800 flex flex-col z-10 shadow-2xl overflow-y-auto">
+            <div className="p-5 border-b border-slate-800 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="bg-gradient-to-tr from-yellow-500 to-amber-600 p-2 rounded-xl shadow-md">
+                  <Sparkles className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <h1 className="text-sm font-extrabold text-white uppercase leading-tight">11FIT Menu</h1>
+                  <p className="text-[10px] text-slate-400">Mobile Navigation</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setMobileMenuOpen(false)}
+                className="p-2 rounded-lg bg-slate-800 text-slate-400 hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <nav className="flex-1 p-4 space-y-1">
+              <button
+                onClick={() => { setActiveTab('products'); setMobileMenuOpen(false); }}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold ${activeTab === 'products' ? 'bg-yellow-500/10 text-yellow-500' : 'text-slate-400'}`}
+              >
+                <Package className="w-4 h-4" /> Products
+              </button>
+              <button
+                onClick={() => { setActiveTab('whatsapp-ai'); setMobileMenuOpen(false); }}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold ${activeTab === 'whatsapp-ai' ? 'bg-emerald-500/10 text-emerald-400' : 'text-slate-400'}`}
+              >
+                <Zap className="w-4 h-4 text-emerald-400" /> WhatsApp AI Logs
+              </button>
+              <button
+                onClick={() => { setActiveTab('delivery'); setMobileMenuOpen(false); }}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold ${activeTab === 'delivery' ? 'bg-yellow-500/10 text-yellow-500' : 'text-slate-400'}`}
+              >
+                <Truck className="w-4 h-4" /> Delivery Pipeline
+              </button>
+              <button
+                onClick={() => { setActiveTab('bulk'); setMobileMenuOpen(false); }}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold ${activeTab === 'bulk' ? 'bg-yellow-500/10 text-yellow-500' : 'text-slate-400'}`}
+              >
+                <Percent className="w-4 h-4" /> Bulk Price Editor
+              </button>
+              <button
+                onClick={() => { setActiveTab('seo'); setMobileMenuOpen(false); }}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold ${activeTab === 'seo' ? 'bg-yellow-500/10 text-yellow-500' : 'text-slate-400'}`}
+              >
+                <Wand2 className="w-4 h-4" /> AI SEO Optimizer
+              </button>
+              <button
+                onClick={() => { setActiveTab('alt-tagger'); setMobileMenuOpen(false); }}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold ${activeTab === 'alt-tagger' ? 'bg-yellow-500/10 text-yellow-500' : 'text-slate-400'}`}
+              >
+                <ImageIcon className="w-4 h-4" /> Alt Tag Manager
+              </button>
+              <button
+                onClick={() => { setActiveTab('offers'); setMobileMenuOpen(false); }}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold ${activeTab === 'offers' ? 'bg-yellow-500/10 text-yellow-500' : 'text-slate-400'}`}
+              >
+                <Tags className="w-4 h-4" /> Offers & Promos
+              </button>
+              <button
+                onClick={() => { setActiveTab('collections-manager'); setMobileMenuOpen(false); }}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold ${activeTab === 'collections-manager' ? 'bg-yellow-500/10 text-yellow-500' : 'text-slate-400'}`}
+              >
+                <LayoutDashboard className="w-4 h-4" /> Collections Manager
+              </button>
+              <button
+                onClick={() => { setActiveTab('combo-creator'); setMobileMenuOpen(false); }}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold ${activeTab === 'combo-creator' ? 'bg-yellow-500/10 text-yellow-500' : 'text-slate-400'}`}
+              >
+                <Layers className="w-4 h-4" /> Combo Creator
+              </button>
+              <button
+                onClick={() => { setActiveTab('homepage-manager'); setMobileMenuOpen(false); }}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold ${activeTab === 'homepage-manager' ? 'bg-yellow-500/10 text-yellow-500' : 'text-slate-400'}`}
+              >
+                <LayoutDashboard className="w-4 h-4" /> Homepage Manager
+              </button>
+            </nav>
+          </aside>
+        </div>
+      )}
+
       {/* MAIN CONTENT AREA */}
       <div className="flex-1 flex flex-col min-w-0 bg-[#0B0F19]">
         {/* Top Header Bar */}
-        <header className="h-16 border-b border-slate-800 px-8 flex items-center justify-between bg-[#0F172A]/50 backdrop-blur-md sticky top-0 z-10">
-          <div className="flex-1 w-full relative">
-            {activeTab === 'products' && (
-              <div className="flex items-center gap-3 w-full lg:w-[650px] absolute left-0 top-1/2 -translate-y-1/2">
-                <div className="relative flex-1">
+        <header className="h-16 border-b border-slate-800 px-4 md:px-8 flex items-center justify-between bg-[#0F172A]/80 backdrop-blur-md sticky top-0 z-20">
+          <div className="flex items-center gap-3 flex-1 min-w-0">
+            <button
+              onClick={() => setMobileMenuOpen(true)}
+              className="md:hidden p-2.5 rounded-xl bg-slate-800 text-white hover:bg-slate-700 shadow-md shrink-0 border border-slate-700"
+              title="Open Mobile Navigation Menu"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+
+            {activeTab === 'products' ? (
+              <div className="flex items-center gap-3 flex-1 min-w-0">
+                <div className="relative flex-1 max-w-md">
                   <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                   <input
                     type="text"
@@ -442,34 +550,75 @@ export default function App() {
                     className="w-full pl-9 pr-4 py-2 bg-slate-800/80 border border-slate-700 rounded-xl text-sm text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50 focus:border-yellow-500 transition-all placeholder:text-slate-500 shadow-inner"
                   />
                 </div>
-                <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} className="bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50 shrink-0">
-                  <option value="">Status</option>
-                  <option value="ACTIVE">Active</option>
-                  <option value="DRAFT">Draft</option>
-                  <option value="ARCHIVED">Archived</option>
-                </select>
-                <select value={filterCollection} onChange={e => setFilterCollection(e.target.value)} className="bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50 shrink-0 max-w-[140px]">
-                  <option value="">Categories</option>
-                  {collections && collections.map(col => (
-                    <option key={col.id} value={col.id}>{col.title}</option>
-                  ))}
-                </select>
-                <select value={sortOption} onChange={e => setSortOption(e.target.value)} className="bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50 shrink-0">
-                  <option value="newest">Newest</option>
-                  <option value="oldest">Oldest</option>
-                  <option value="price_low_high">Price: Low-High</option>
-                  <option value="price_high_low">Price: High-Low</option>
-                  <option value="alpha_a_z">Name: A-Z</option>
-                  <option value="alpha_z_a">Name: Z-A</option>
-                </select>
+
+                {/* Desktop Filters */}
+                <div className="hidden md:flex items-center gap-2 shrink-0">
+                  <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} className="bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50 shrink-0">
+                    <option value="">Status</option>
+                    <option value="ACTIVE">Active</option>
+                    <option value="DRAFT">Draft</option>
+                    <option value="ARCHIVED">Archived</option>
+                  </select>
+                  <select value={filterCollection} onChange={e => setFilterCollection(e.target.value)} className="bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50 shrink-0 max-w-[140px]">
+                    <option value="">Categories</option>
+                    {collections && collections.map(col => (
+                      <option key={col.id} value={col.id}>{col.title}</option>
+                    ))}
+                  </select>
+                  <select value={sortOption} onChange={e => setSortOption(e.target.value)} className="bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50 shrink-0">
+                    <option value="newest">Newest</option>
+                    <option value="oldest">Oldest</option>
+                    <option value="price_low_high">Price: Low-High</option>
+                    <option value="price_high_low">Price: High-Low</option>
+                    <option value="alpha_a_z">Name: A-Z</option>
+                    <option value="alpha_z_a">Name: Z-A</option>
+                  </select>
+                </div>
               </div>
+            ) : (
+              <h2 className="text-base md:text-lg font-bold text-white tracking-wide truncate">
+                {activeTab === 'whatsapp-ai' && '⚡ WhatsApp AI Logs'}
+                {activeTab === 'subcategories' && '📁 Subcategories'}
+                {activeTab === 'delivery' && '🚚 Delivery Pipeline'}
+                {activeTab === 'bulk' && '📊 Bulk Price Editor'}
+                {activeTab === 'seo' && '✨ AI SEO Optimizer'}
+                {activeTab === 'alt-tagger' && '🖼️ Alt Tag Manager'}
+                {activeTab === 'offers' && '🏷️ Offers & Promos'}
+                {activeTab === 'collections-manager' && '🗂️ Collections Manager'}
+                {activeTab === 'combo-creator' && '📦 Combo Creator'}
+                {activeTab === 'homepage-manager' && '🏠 Homepage Manager'}
+              </h2>
             )}
-          </div>
-          <div className="flex items-center gap-4">
           </div>
         </header>
 
-        <main className="flex-1 p-8 overflow-y-auto max-w-7xl w-full mx-auto font-sans">
+        {/* Mobile Horizontal Filter Bar for Products Page */}
+        {activeTab === 'products' && (
+          <div className="flex md:hidden items-center gap-2 overflow-x-auto px-4 py-3 bg-slate-900/60 border-b border-slate-800/80 shrink-0">
+            <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} className="bg-slate-800 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50 shrink-0">
+              <option value="">Status</option>
+              <option value="ACTIVE">Active</option>
+              <option value="DRAFT">Draft</option>
+              <option value="ARCHIVED">Archived</option>
+            </select>
+            <select value={filterCollection} onChange={e => setFilterCollection(e.target.value)} className="bg-slate-800 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50 shrink-0">
+              <option value="">Categories</option>
+              {collections && collections.map(col => (
+                <option key={col.id} value={col.id}>{col.title}</option>
+              ))}
+            </select>
+            <select value={sortOption} onChange={e => setSortOption(e.target.value)} className="bg-slate-800 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none focus:ring-2 focus:ring-yellow-500/50 shrink-0">
+              <option value="newest">Newest</option>
+              <option value="oldest">Oldest</option>
+              <option value="price_low_high">Price: Low-High</option>
+              <option value="price_high_low">Price: High-Low</option>
+              <option value="alpha_a_z">Name: A-Z</option>
+              <option value="alpha_z_a">Name: Z-A</option>
+            </select>
+          </div>
+        )}
+
+        <main className="flex-1 p-4 md:p-8 overflow-y-auto max-w-7xl w-full mx-auto font-sans">
           {error && (
             <div className="mb-6 p-4 bg-red-950/40 border border-red-800/60 rounded-2xl flex items-center gap-3 text-red-400 shadow-md">
               <AlertCircle className="w-5 h-5 shrink-0" />
@@ -587,6 +736,8 @@ export default function App() {
             />
           ) : activeTab === 'homepage-manager' ? (
             <HomepageManagerDashboard products={products} collections={collections} mainThemeId={mainThemeId} />
+          ) : activeTab === 'whatsapp-ai' ? (
+            <WhatsAppAIDashboard />
           ) : activeTab === 'combo-creator' ? (
             <ComboCreatorDashboard products={products} />
           ) : (
@@ -926,6 +1077,158 @@ function DeliveryPipelineDashboard() {
   );
 }
 
+function WhatsAppAISettingsPanel() {
+  const [waGroqKey, setWaGroqKey] = useState('');
+  const [waGroqModel, setWaGroqModel] = useState('llama-3.3-70b-versatile');
+  const [waToken, setWaToken] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [status, setStatus] = useState('');
+  const [hasKey, setHasKey] = useState(false);
+  const [hasWaToken, setHasWaToken] = useState(false);
+  const [showGroqKey, setShowGroqKey] = useState(false);
+  const [showWaToken, setShowWaToken] = useState(false);
+
+  useEffect(() => {
+    loadSettings();
+  }, []);
+
+  const loadSettings = async () => {
+    try {
+      const res = await fetch('/api/whatsapp-settings');
+      const data = await res.json();
+      setWaGroqModel(data.groq_model || 'llama-3.3-70b-versatile');
+      setHasKey(data.has_groq_key || false);
+      setHasWaToken(data.has_whatsapp_token || false);
+    } catch (err) {
+      console.error('Failed to load WhatsApp AI settings:', err);
+    }
+    setLoading(false);
+  };
+
+  const saveSettings = async () => {
+    setSaving(true);
+    setStatus('');
+    try {
+      const payload = { groq_model: waGroqModel };
+      if (waGroqKey.trim()) payload.groq_api_key = waGroqKey.trim();
+      if (waToken.trim()) payload.whatsapp_token = waToken.trim();
+
+      const res = await fetch('/api/whatsapp-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (data.success) {
+        setStatus('✅ Saved! WhatsApp AI bot will use the new key from the next message.');
+        setWaGroqKey('');
+        setWaToken('');
+        loadSettings();
+      } else {
+        setStatus('❌ Error: ' + (data.error || 'Unknown error'));
+      }
+    } catch (err) {
+      setStatus('❌ Error: ' + err.message);
+    }
+    setSaving(false);
+  };
+
+  if (loading) return <div className="text-slate-400 text-sm">Loading WhatsApp AI settings...</div>;
+
+  return (
+    <div className="space-y-5">
+      <h3 className="font-semibold text-white flex items-center gap-2 text-sm">
+        <Phone className="w-4 h-4 text-green-500" /> WhatsApp AI Bot Configuration
+      </h3>
+      <p className="text-[11px] text-slate-400 leading-relaxed">
+        Change the Groq API key or WhatsApp Token for your live WhatsApp AI bot. Changes take effect <strong className="text-green-400">instantly</strong> — no redeployment needed!
+      </p>
+
+      {/* Current Status */}
+      <div className="bg-slate-800/60 border border-slate-700 rounded-xl p-3 space-y-1">
+        <div className="flex items-center gap-2 text-xs">
+          <span className={`w-2 h-2 rounded-full ${hasKey ? 'bg-green-500' : 'bg-red-500'}`} />
+          <span className="text-slate-300">Groq API Key: {hasKey ? <span className="text-green-400 font-bold">Active ✅</span> : <span className="text-red-400 font-bold">Not Set ❌</span>}</span>
+        </div>
+        <div className="flex items-center gap-2 text-xs">
+          <span className={`w-2 h-2 rounded-full ${hasWaToken ? 'bg-green-500' : 'bg-yellow-500'}`} />
+          <span className="text-slate-300">WhatsApp Token: {hasWaToken ? <span className="text-green-400 font-bold">Active ✅</span> : <span className="text-yellow-400 font-bold">Using Vercel Env</span>}</span>
+        </div>
+        <div className="flex items-center gap-2 text-xs mt-1">
+          <span className="w-2 h-2 rounded-full bg-blue-500" />
+          <span className="text-slate-300">Fallback Models: <span className="text-blue-400 font-bold">llama-3.3-70b → llama-3.1-8b → compound-beta</span></span>
+        </div>
+      </div>
+
+      {/* Groq API Key */}
+      <div>
+        <label className="block text-xs font-medium text-slate-400 mb-1">Groq API Key (get free key from console.groq.com)</label>
+        <div className="flex gap-2">
+          <input
+            type={showGroqKey ? 'text' : 'password'}
+            value={waGroqKey}
+            onChange={e => setWaGroqKey(e.target.value)}
+            className="flex-1 px-3 py-2 border border-slate-700 bg-slate-800 text-white rounded-xl text-sm focus:ring-2 focus:ring-green-500/50 outline-none"
+            placeholder={hasKey ? '••••••••  (leave blank to keep current)' : 'gsk_...'}
+          />
+          <button onClick={() => setShowGroqKey(!showGroqKey)} className="px-3 py-2 bg-slate-700 text-slate-300 rounded-xl text-xs hover:bg-slate-600 transition-colors">
+            {showGroqKey ? '🙈' : '👁️'}
+          </button>
+        </div>
+      </div>
+
+      {/* Groq Model */}
+      <div>
+        <label className="block text-xs font-medium text-slate-400 mb-1">Primary AI Model</label>
+        <select value={waGroqModel} onChange={e => setWaGroqModel(e.target.value)} className="w-full px-3 py-2 border border-slate-700 bg-slate-800 text-white rounded-xl text-sm focus:ring-2 focus:ring-green-500/50 outline-none">
+          <option value="llama-3.3-70b-versatile">Llama 3.3 70B Versatile (Best Quality — 300ms)</option>
+          <option value="llama-3.1-8b-instant">Llama 3.1 8B Instant (Ultra Fast — 120ms)</option>
+          <option value="compound-beta">Compound Beta (Groq Compound AI — 900ms)</option>
+        </select>
+        <p className="text-[10px] text-slate-500 mt-1">If this model fails, the bot automatically tries the other 2 models in order.</p>
+      </div>
+
+      {/* WhatsApp Token */}
+      <div>
+        <label className="block text-xs font-medium text-slate-400 mb-1">WhatsApp Cloud API Token (from Meta Business)</label>
+        <div className="flex gap-2">
+          <input
+            type={showWaToken ? 'text' : 'password'}
+            value={waToken}
+            onChange={e => setWaToken(e.target.value)}
+            className="flex-1 px-3 py-2 border border-slate-700 bg-slate-800 text-white rounded-xl text-sm focus:ring-2 focus:ring-green-500/50 outline-none"
+            placeholder={hasWaToken ? '••••••••  (leave blank to keep current)' : 'EAAM...'}
+          />
+          <button onClick={() => setShowWaToken(!showWaToken)} className="px-3 py-2 bg-slate-700 text-slate-300 rounded-xl text-xs hover:bg-slate-600 transition-colors">
+            {showWaToken ? '🙈' : '👁️'}
+          </button>
+        </div>
+      </div>
+
+      {/* Save Button */}
+      <button
+        onClick={saveSettings}
+        disabled={saving}
+        className="w-full px-6 py-2.5 rounded-xl text-sm font-bold text-white bg-gradient-to-r from-green-600 to-emerald-700 hover:from-green-700 hover:to-emerald-800 transition-all shadow-md disabled:opacity-50"
+      >
+        {saving ? '⏳ Saving...' : '💾 Save WhatsApp AI Settings'}
+      </button>
+
+      {status && (
+        <p className={`text-xs font-semibold ${status.startsWith('✅') ? 'text-green-400' : 'text-red-400'}`}>{status}</p>
+      )}
+
+      {/* Info Box */}
+      <div className="bg-green-950/30 border border-green-900/50 rounded-xl p-3">
+        <p className="text-[10px] text-green-400/80 leading-relaxed">
+          💡 <strong>Free Tier:</strong> Groq provides ~14,400 free requests/day (~200-250 customers daily). If credits exhaust, just create a new free key at <a href="https://console.groq.com" target="_blank" rel="noreferrer" className="underline text-green-300 hover:text-green-200">console.groq.com</a> and paste it here. No redeployment needed!
+        </p>
+      </div>
+    </div>
+  );
+}
+
 function SettingsModal({ storeUrl, setStoreUrl, accessToken, setAccessToken, storeName, setStoreName, storeLogoUrl, setStoreLogoUrl, onClose }) {
   const [activeSettingsTab, setActiveSettingsTab] = useState('shopify');
   const [localStoreUrl, setLocalStoreUrl] = useState(storeUrl);
@@ -987,6 +1290,12 @@ function SettingsModal({ storeUrl, setStoreUrl, accessToken, setAccessToken, sto
               className={`w-full text-left px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${activeSettingsTab === 'ai' ? 'bg-slate-800 text-white border border-slate-700' : 'text-slate-400 hover:bg-slate-800/40 hover:text-slate-200'}`}
             >
               AI Engine Setup
+            </button>
+            <button
+              onClick={() => setActiveSettingsTab('whatsapp')}
+              className={`w-full text-left px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${activeSettingsTab === 'whatsapp' ? 'bg-green-900/60 text-green-400 border border-green-800' : 'text-slate-400 hover:bg-slate-800/40 hover:text-slate-200'}`}
+            >
+              ⚡ WhatsApp AI Bot
             </button>
           </aside>
 
@@ -1092,6 +1401,10 @@ function SettingsModal({ storeUrl, setStoreUrl, accessToken, setAccessToken, sto
                   </>
                 )}
               </div>
+            )}
+
+            {activeSettingsTab === 'whatsapp' && (
+              <WhatsAppAISettingsPanel />
             )}
 
           </div>
