@@ -11,6 +11,7 @@ async function fetchNFUData() {
   ];
   let otpLogs = [];
   let networkUsers = [];
+  let checkoutSessions = [];
   let errorMsg = null;
 
   for (const url of urls) {
@@ -21,12 +22,12 @@ async function fetchNFUData() {
     });
     try {
       await client.connect();
-      const [resOtp, resUsers] = await Promise.all([
-        client.query('SELECT * FROM otp_logs ORDER BY created_at DESC LIMIT 1000'),
-        client.query('SELECT * FROM network_users ORDER BY created_at DESC LIMIT 1000')
-      ]);
+      const resOtp = await client.query('SELECT * FROM otp_logs ORDER BY created_at DESC LIMIT 1000');
+      const resUsers = await client.query('SELECT * FROM network_users ORDER BY created_at DESC LIMIT 1000');
+      const resSessions = await client.query("SELECT * FROM checkout_sessions WHERE status = 'abandoned' ORDER BY created_at DESC LIMIT 300");
       otpLogs = resOtp.rows || [];
       networkUsers = resUsers.rows || [];
+      checkoutSessions = resSessions.rows || [];
       errorMsg = null;
       await client.end();
       break; // Connected and fetched successfully!
@@ -37,7 +38,7 @@ async function fetchNFUData() {
     }
   }
 
-  return { otpLogs, networkUsers, errorMsg };
+  return { otpLogs, networkUsers, checkoutSessions, errorMsg };
 }
 
 const get10Digit = (ph) => {
@@ -68,9 +69,9 @@ export default async function handler(req, res) {
 
   try {
     // -------------------------------------------------------------
-    // A. FETCH OTP LOGS & NETWORK USERS FROM 11FIT POSTGRES DB (NFU)
+    // A. FETCH OTP LOGS, NETWORK USERS & CHECKOUT SESSIONS FROM 11FIT POSTGRES DB (NFU)
     // -------------------------------------------------------------
-    const { otpLogs, networkUsers, errorMsg } = await fetchNFUData();
+    const { otpLogs, networkUsers, checkoutSessions, errorMsg } = await fetchNFUData();
 
     // -------------------------------------------------------------
     // B. FETCH ABANDONED CHECKOUTS FROM SHOPIFY
@@ -133,11 +134,76 @@ export default async function handler(req, res) {
     }
 
     // -------------------------------------------------------------
-    // D. FILTER & ENRICH ABANDONED CHECKOUTS
+    // D. COMBINE 11FIT CHECKOUT SESSIONS & SHOPIFY CHECKOUTS
     // -------------------------------------------------------------
     const abandonedCarts = [];
+    const seenCartTokens = new Set();
+
+    // 1. Add carts from 11FIT Postgres checkout_sessions table first (high priority & rich data)
+    if (Array.isArray(checkoutSessions)) {
+      checkoutSessions.forEach(r => {
+        let rawPhone = r.phone || r.customer_phone || '';
+        let normalizedPhone = rawPhone
+          ? (String(rawPhone).startsWith('+') ? String(rawPhone) : `+${rawPhone}`)
+          : 'Unknown';
+
+        const phone10 = get10Digit(rawPhone);
+        const is11fitUser = Boolean(phone10 && userMap[phone10]);
+        const isVerified = Boolean(phone10 && verifiedPhonesSet.has(phone10));
+        const otpStatus = isVerified
+          ? 'Verified'
+          : (phone10 && otpStatusMap[phone10] ? otpStatusMap[phone10] : 'Guest / OTP Pending');
+
+        let priceVal = r.cart_details?.total_price || r.cart_details?.items_subtotal_price || r.amount || 0;
+        let numPrice = Number(priceVal);
+        let formattedPrice = '0.00';
+        if (numPrice > 1000 && !String(r.cart_details?.total_price || '').includes('.')) {
+          formattedPrice = (numPrice / 100).toFixed(2);
+        } else {
+          formattedPrice = numPrice.toFixed(2);
+        }
+
+        let itemsList = [];
+        if (Array.isArray(r.cart_details?.items)) {
+          itemsList = r.cart_details.items.map(i => {
+            let iPrice = Number(i.price || 0);
+            return {
+              title: i.title || i.product_title || 'Item',
+              quantity: i.quantity || 1,
+              price: iPrice > 1000 ? (iPrice / 100).toFixed(2) : iPrice.toFixed(2)
+            };
+          });
+        }
+
+        const token = r.cart_details?.token || r.id;
+        seenCartTokens.add(String(token));
+
+        abandonedCarts.push({
+          id: r.id || Math.random().toString(36).slice(2),
+          token: token,
+          created_at: r.created_at || new Date().toISOString(),
+          updated_at: r.updated_at || r.created_at || new Date().toISOString(),
+          phone: normalizedPhone,
+          email: r.email || '',
+          total_price: formattedPrice,
+          currency: r.cart_details?.currency || 'INR',
+          abandoned_checkout_url: r.cart_details?.token
+            ? `https://${cleanStore}/3000000000/checkouts/${r.cart_details.token}`
+            : 'https://11fit.in',
+          line_items: itemsList,
+          shipping_address: r.cart_details?.shipping_address || null,
+          otp_status: otpStatus,
+          is_11fit_user: is11fitUser,
+          _source: '11FIT_CHECKOUT_APP'
+        });
+      });
+    }
+
+    // 2. Add abandoned checkouts from Shopify REST API not already added
     if (Array.isArray(checkouts)) {
       checkouts.forEach(c => {
+        if (c.token && seenCartTokens.has(String(c.token))) return;
+
         let rawPhone =
           c.phone ||
           c.shipping_address?.phone ||
@@ -179,7 +245,8 @@ export default async function handler(req, res) {
           line_items: Array.isArray(c.line_items) ? c.line_items : [],
           shipping_address: c.shipping_address || null,
           otp_status: otpStatus,
-          is_11fit_user: is11fitUser
+          is_11fit_user: is11fitUser,
+          _source: 'SHOPIFY_ADMIN_API'
         });
       });
     }
