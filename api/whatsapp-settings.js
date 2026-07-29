@@ -9,6 +9,29 @@ const headers = {
   'Content-Type': 'application/json'
 };
 
+const DEFAULT_INST_LANGUAGE = `- AUTOMATIC LANGUAGE SWITCHING: Customer jis language mein message kare, tum AUTOMATICALLY ussi language mein reply karo! (English, Hinglish, Hindi, regional languages)
+- AUTOMATIC TONE MIRRORING: Casual / Bro Tone -> Cool shopping buddy ("Haan bhai, bilkul! 🔥"). Formal -> Polite executive. Frustrated / Worried -> Empathetic & fast solution.
+- SHORT & CRISP REPLIES: MAXIMUM 2 TO 4 LINES PER REPLY! Never tell customer to contact us on WhatsApp (+91 74949 61428) because they are already chatting on WhatsApp!`;
+
+const DEFAULT_INST_ORDER_SECURITY = `1. ORDER NUMBER FORMAT: 11FIT ke order numbers "#" se start hote hain (jaise #1129, #1039). Customer "1039" bole ya "#1039", tum hamesha recognize karo.
+2. AUTO-VERIFICATION & 10-DIGIT VERIFICATION FLOW (MANDATORY):
+   - Current WhatsApp Number aur Order ke registered_mobile_10_digits ko compare karo.
+   - ✅ AGAR MATCH HO JAYE: Short 2-3 line reply mein full order details do (Status, Tracking link). 🎉
+   - ❌ AGAR MATCH NAHI HOTA: Politely 10-digit registered number pucho ("Aapka yeh WhatsApp number order ke saath attached nahi hai...").
+   - AGAR 10-DIGIT NUMBER MATCH HO JAYE: Verification successful bolo aur order details bata do!
+   - AGAR MATCH NA HO: Hamesha decline karo aur support@11fit.com do.`;
+
+const DEFAULT_INST_SIZE_ADVISOR = `- Har size/height/weight enquiry ke liye [11FIT SIZE & FIT RECOMMENDATION] ya [11FIT GENERAL SIZE & FIT GUIDE] ka data use karke confident size recommend karo!
+- Reassure customer: "11FIT tees mein pehle se drop-shoulder oversized cut hota hai, toh apna normal size hi lein!"
+- 4-Way Lycra shorts/track pants ke liye L aur XL dono stretch comfortably hote hain.`;
+
+const DEFAULT_INST_BRAND_POLICIES = `- Oversized Tees & Track Pants: Combed cotton & 4-Way Lycra.
+- Shipping: 3-5 business days across India. COD & Prepaid available.
+- Returns/Exchange: 7-Day Return/Exchange policy.
+- Support Email: support@11fit.com`;
+
+const DEFAULT_INST_CUSTOM = ``;
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
@@ -29,17 +52,32 @@ export default async function handler(req, res) {
         groq_model: row.groq_model || 'llama-3.3-70b-versatile',
         whatsapp_token: row.whatsapp_token ? '••••••' + row.whatsapp_token.slice(-8) : '',
         has_groq_key: !!row.groq_api_key,
-        has_whatsapp_token: !!row.whatsapp_token
+        has_whatsapp_token: !!row.whatsapp_token,
+        inst_language: row.inst_language || DEFAULT_INST_LANGUAGE,
+        inst_order_security: row.inst_order_security || DEFAULT_INST_ORDER_SECURITY,
+        inst_size_advisor: row.inst_size_advisor || DEFAULT_INST_SIZE_ADVISOR,
+        inst_brand_policies: row.inst_brand_policies || DEFAULT_INST_BRAND_POLICIES,
+        inst_custom: row.inst_custom || DEFAULT_INST_CUSTOM
       });
     } catch (err) {
-      return res.status(200).json({ groq_api_key: '', groq_model: 'llama-3.3-70b-versatile', has_groq_key: false, has_whatsapp_token: false });
+      return res.status(200).json({
+        groq_api_key: '', groq_model: 'llama-3.3-70b-versatile', has_groq_key: false, has_whatsapp_token: false,
+        inst_language: DEFAULT_INST_LANGUAGE,
+        inst_order_security: DEFAULT_INST_ORDER_SECURITY,
+        inst_size_advisor: DEFAULT_INST_SIZE_ADVISOR,
+        inst_brand_policies: DEFAULT_INST_BRAND_POLICIES,
+        inst_custom: DEFAULT_INST_CUSTOM
+      });
     }
   }
 
   // POST: Save WhatsApp AI settings
   if (req.method === 'POST') {
     try {
-      const { groq_api_key, groq_model, whatsapp_token } = req.body;
+      const {
+        groq_api_key, groq_model, whatsapp_token,
+        inst_language, inst_order_security, inst_size_advisor, inst_brand_policies, inst_custom
+      } = req.body;
 
       // Check if settings row exists
       const { data: existing } = await axios.get(
@@ -51,6 +89,11 @@ export default async function handler(req, res) {
       if (groq_api_key !== undefined && groq_api_key !== '') payload.groq_api_key = groq_api_key;
       if (groq_model !== undefined) payload.groq_model = groq_model;
       if (whatsapp_token !== undefined && whatsapp_token !== '') payload.whatsapp_token = whatsapp_token;
+      if (inst_language !== undefined) payload.inst_language = inst_language;
+      if (inst_order_security !== undefined) payload.inst_order_security = inst_order_security;
+      if (inst_size_advisor !== undefined) payload.inst_size_advisor = inst_size_advisor;
+      if (inst_brand_policies !== undefined) payload.inst_brand_policies = inst_brand_policies;
+      if (inst_custom !== undefined) payload.inst_custom = inst_custom;
       payload.updated_at = new Date().toISOString();
 
       if (existing && existing.length > 0) {

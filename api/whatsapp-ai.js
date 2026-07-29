@@ -48,6 +48,60 @@ async function saveChatMessage(phone, role, content) {
   }
 }
 
+// ─── WEB PUSH NOTIFICATIONS (For Closed-App Alerts) ───
+const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY || 'BIqLUY30-N9qSJrCz4tF1C65XgCRVyr-1TmiCTG2MNFL2_8_EAC4o626ehSdKSM5uUpNPJvpcNCjwOen8evAjRU';
+const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY || 'MJiZ0ppPI4Jx1RM43ryneCtprRbgnsaSGnBmCooFqN0';
+
+try {
+  import('web-push').then((webpush) => {
+    webpush.default.setVapidDetails('mailto:admin@11fit.com', VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
+    global.webpush = webpush.default;
+  }).catch(() => {});
+} catch (_) {}
+
+async function sendPushNotificationToAll(title, body, data = { url: '/' }) {
+  if (!global.webpush) return;
+  try {
+    const subRes = await axios.get(
+      `${SUPABASE_URL}/rest/v1/push_subscriptions?select=subscription`,
+      { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } }
+    );
+    const subs = subRes.data || [];
+    if (subs.length === 0) return;
+
+    const vibrate = data.vibrate;
+    if (vibrate) delete data.vibrate;
+
+    const payload = JSON.stringify({
+      title: title || '💬 11FIT: New WhatsApp Message',
+      body: body || 'A customer sent you a message',
+      icon: '/favicon.svg',
+      badge: '/favicon.svg',
+      tag: 'wa-new-msg',
+      vibrate,
+      data
+    });
+
+    await Promise.allSettled(
+      subs.map(async ({ subscription }) => {
+        try {
+          await global.webpush.sendNotification(subscription, payload);
+        } catch (err) {
+          if (err.statusCode === 410 || err.statusCode === 404) {
+            await axios.delete(
+              `${SUPABASE_URL}/rest/v1/push_subscriptions?endpoint=eq.${encodeURIComponent(subscription.endpoint)}`,
+              { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } }
+            ).catch(() => {});
+          }
+        }
+      })
+    );
+  } catch (err) {
+    console.error('Failed to broadcast Web Push notification:', err.message);
+  }
+}
+
+
 // Get recent chat history via REST API
 async function getChatHistory(phone) {
   try {
@@ -68,24 +122,76 @@ async function getChatHistory(phone) {
   }
 }
 
-// Tool 1: Shopify Order Lookup
-// Tool 1: Shopify Order Lookup with 10-Digit Mobile Verification & Exact Location
+// Tool 1: Shopify Order Lookup with 10-Digit Mobile Verification & Exact Location (DB + Live)
 async function lookupOrder(orderNumber, senderPhone = '', userText = '', history = '') {
-  const pureNum = String(orderNumber).replace(/[^0-9]/g, '');
-  try {
-    const url = `https://${SHOPIFY_STORE_URL}/admin/api/2024-10/orders.json?status=any&name=${pureNum}`;
-    const res = await axios.get(url, {
-      headers: {
-        'X-Shopify-Access-Token': SHOPIFY_ACCESS_TOKEN,
-        'Content-Type': 'application/json'
-      }
-    });
-    const orders = res.data.orders || [];
-    if (orders.length === 0) return { error: `Order #${pureNum} not found in 11FIT Shopify store.` };
-    const order = orders[0];
+  const pureNum = String(orderNumber || '').replace(/[^0-9]/g, '');
+  const cleanSender = String(senderPhone || '').replace(/\D/g, '').slice(-10);
 
-    // Extract Registered Mobile Number
-    const registeredPhone = order.phone || order.customer?.phone || order.shipping_address?.phone || '';
+  try {
+    let order = null;
+
+    // STEP 1: Always check our fast Supabase shopify_orders DB table first
+    if (SUPABASE_URL && SUPABASE_KEY) {
+      try {
+        let queryUrl = '';
+        if (pureNum) {
+          queryUrl = `${SUPABASE_URL}/rest/v1/shopify_orders?or=(name.eq.%23${pureNum},order_number.eq.${pureNum})&limit=1`;
+        } else if (cleanSender && cleanSender.length === 10) {
+          queryUrl = `${SUPABASE_URL}/rest/v1/shopify_orders?or=(phone_last10.eq.${cleanSender},alt_phone_last10.eq.${cleanSender})&order=created_at.desc&limit=1`;
+        }
+
+        if (queryUrl) {
+          const dbRes = await axios.get(queryUrl, {
+            headers: {
+              'apikey': SUPABASE_KEY,
+              'Authorization': `Bearer ${SUPABASE_KEY}`,
+              'Content-Type': 'application/json'
+            }
+          });
+          const rows = dbRes.data || [];
+          if (rows.length > 0) {
+            const row = rows[0];
+            const oData = row.order_data || {};
+            order = {
+              name: row.name || `#${row.order_number}`,
+              phone: row.phone_last10 || oData.phone || oData.customer?.phone || oData.shipping_address?.phone || '',
+              shipping_address: oData.shipping_address || {},
+              fulfillments: [{
+                tracking_company: row.tracking_company || oData.fulfillments?.[0]?.tracking_company || '11FIT Express Delivery',
+                tracking_number: row.tracking_number || oData.fulfillments?.[0]?.tracking_number,
+                tracking_url: row.tracking_url || oData.fulfillments?.[0]?.tracking_url || oData.fulfillments?.[0]?.tracking_urls?.[0] || 'https://www.icarry.in'
+              }],
+              fulfillment_status: row.fulfillment_status || oData.fulfillment_status || 'unfulfilled',
+              financial_status: oData.financial_status || 'paid',
+              total_price: row.total_price || oData.total_price || '0'
+            };
+          }
+        }
+      } catch (err) {
+        console.error('DB order lookup warning:', err.message);
+      }
+    }
+
+    // STEP 2: Fallback to Shopify API if order number provided and not in DB
+    if (!order && pureNum) {
+      const url = `https://${SHOPIFY_STORE_URL}/admin/api/2024-10/orders.json?status=any&name=${pureNum}`;
+      const res = await axios.get(url, {
+        headers: {
+          'X-Shopify-Access-Token': SHOPIFY_ACCESS_TOKEN,
+          'Content-Type': 'application/json'
+        }
+      });
+      const orders = res.data.orders || [];
+      if (orders.length > 0) {
+        order = orders[0];
+      }
+    }
+
+    if (!order) {
+      return { error: `No matching order found in 11FIT store for ${pureNum ? '#' + pureNum : cleanSender}.` };
+    }
+
+    const registeredPhone = order.phone || order.customer?.phone || order.shipping_address?.phone || cleanSender || '';
     const order10Digits = String(registeredPhone).replace(/[^0-9]/g, '').slice(-10);
 
     const destination_location = `${order.shipping_address?.city || 'India'}, ${order.shipping_address?.province || ''} - ${order.shipping_address?.zip || ''}`.replace(/^[,\s-]+|[,\s-]+$/g, '') || 'India';
@@ -94,16 +200,25 @@ async function lookupOrder(orderNumber, senderPhone = '', userText = '', history
     const rawStatus = order.fulfillment_status || 'unfulfilled';
     const readableStatus = rawStatus === 'fulfilled' ? 'FULFILLED / SHIPPED (In Transit)' : rawStatus.toUpperCase();
 
+    const finStatus = (order.financial_status || '').toLowerCase();
+    const totalAmount = `₹${order.total_price || 0}`;
+    const payment_status = finStatus === 'paid'
+      ? `💳 PAID ONLINE (Prepaid - ${totalAmount})`
+      : finStatus === 'partially_paid'
+      ? `🪙 PARTIALLY PAID (Advance Paid | Balance to Pay on COD: ${totalAmount})`
+      : `💵 CASH ON DELIVERY (COD | Please Pay ${totalAmount} on Delivery)`;
+
     return {
       order_number: order.name,
       registered_mobile_10_digits: order10Digits || 'No mobile registered',
       status: readableStatus,
+      payment_status,
       financial_status: order.financial_status,
-      total_price: `₹${order.total_price}`,
+      total_price: totalAmount,
       destination_location,
       courier_company,
       tracking_url,
-      CRITICAL_INSTRUCTION_TO_AI: `You MUST compare Customer ka Current WhatsApp Number or Customer ka bataya hua 10-digit number with registered_mobile_10_digits (${order10Digits}). If they DO NOT MATCH exactly, DO NOT reveal status or tracking_url! Never output '[SHOPIFY ORDER RESULT...]' or any JSON in your reply!`
+      CRITICAL_INSTRUCTION_TO_AI: `You MUST compare Customer ka Current WhatsApp Number or Customer ka bataya hua 10-digit number with registered_mobile_10_digits (${order10Digits}). If they DO NOT MATCH exactly, DO NOT reveal status or tracking_url! When answering order status, ALWAYS clearly state the payment_status (${payment_status}) and order status. Never output '[SHOPIFY ORDER RESULT...]' or any JSON in your reply!`
     };
   } catch (err) {
     return { error: err.message };
@@ -124,24 +239,44 @@ function extractProductKeyword(text) {
   return terms.join(' ');
 }
 
-// Tool 2: Shopify GraphQL Dynamic Product & Combo Search
+// Tool 2: Shopify GraphQL Dynamic Product & Combo Search (Direct from shopify_combos DB table)
 async function searchProducts(userText) {
   const cleanKeyword = extractProductKeyword(userText);
   const isComboSearch = /combo|trio|pack|offer|deal|discount/i.test(userText);
+
+  // 1. Fetch active combos created by our app directly from Supabase DB shopify_combos
+  let dbCombos = [];
+  if (SUPABASE_URL && SUPABASE_KEY) {
+    try {
+      const dbRes = await axios.get(
+        `${SUPABASE_URL}/rest/v1/shopify_combos?is_active=eq.true&order=updated_at.desc`,
+        {
+          headers: {
+            'apikey': SUPABASE_KEY,
+            'Authorization': `Bearer ${SUPABASE_KEY}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+      dbCombos = dbRes.data || [];
+    } catch (e) {
+      console.warn('DB combos lookup warning:', e.message);
+    }
+  }
+
+  // 2. Fetch products from Shopify GraphQL
   const query = `
     query SearchProducts($query: String!) {
       products(first: 50, query: $query) {
         edges {
           node {
+            id
             title
             handle
             variants(first: 1) {
               edges {
                 node { price }
               }
-            }
-            combo_config: metafield(namespace: "price_editor", key: "combo_config") {
-              value
             }
           }
         }
@@ -161,34 +296,38 @@ async function searchProducts(userText) {
     );
     let edges = res.data?.data?.products?.edges || [];
 
-    // SMART COMBO SORTING: Always put products that have an active combo_config at the very top!
+    // Prioritize products that have a matching active DB combo
     edges.sort((a, b) => {
-      const aCombo = a.node.combo_config ? (() => { try { return JSON.parse(a.node.combo_config.value); } catch(_) { return null; } })() : null;
-      const bCombo = b.node.combo_config ? (() => { try { return JSON.parse(b.node.combo_config.value); } catch(_) { return null; } })() : null;
-      const aHasCombo = aCombo && Number(aCombo.count) > 0 && Number(aCombo.price) > 0 ? 1 : 0;
-      const bHasCombo = bCombo && Number(bCombo.count) > 0 && Number(bCombo.price) > 0 ? 1 : 0;
-      if (isComboSearch || aHasCombo !== bHasCombo) {
-        return bHasCombo - aHasCombo; // Combo products first
-      }
-      return 0;
+      const aId = String(a.node.id).replace(/\D/g, '');
+      const bId = String(b.node.id).replace(/\D/g, '');
+      const aCombo = dbCombos.find(c => String(c.product_id) === aId || (c.product_title && a.node.title.toLowerCase().includes(c.product_title.toLowerCase())));
+      const bCombo = dbCombos.find(c => String(c.product_id) === bId || (c.product_title && b.node.title.toLowerCase().includes(c.product_title.toLowerCase())));
+      return (bCombo ? 1 : 0) - (aCombo ? 1 : 0);
     });
 
-    return edges.slice(0, 6).map(e => {
+    const productLines = edges.slice(0, 6).map(e => {
       const p = e.node;
+      const rawId = String(p.id).replace(/\D/g, '');
       const singlePrice = p.variants.edges[0]?.node?.price || 'N/A';
-      let combo = null;
-      try {
-        if (p.combo_config) combo = JSON.parse(p.combo_config.value);
-      } catch (_) {}
       
-      // ONLY show combo if combo_config metafield ACTUALLY EXISTS and count/price > 0
+      const matchingCombo = dbCombos.find(c => String(c.product_id) === rawId || (c.product_title && p.title.toLowerCase().includes(c.product_title.toLowerCase())));
       let comboLine = '';
-      if (combo && Number(combo.count) > 0 && Number(combo.price) > 0) {
-        comboLine = ` | *Combo Offer:* Pack of ${combo.count} @ *₹${combo.price}*`;
+      if (matchingCombo && Number(matchingCombo.combo_count) > 0) {
+        comboLine = ` | 🔥 *COMBO OFFER:* Pack of ${matchingCombo.combo_count} @ *₹${matchingCombo.combo_price}* (Coupon: *${matchingCombo.discount_code}*)`;
       }
 
       return `👕 *${p.title}*\n💰 *Single:* ₹${singlePrice}${comboLine}\n🔗 *Buy Now:* https://11fit.in/products/${p.handle}`;
     });
+
+    // If customer asked about combos, prepend all active store combos from DB at the very top
+    if (isComboSearch && dbCombos.length > 0) {
+      const summaryList = dbCombos.map(c => 
+        `🔥 *${c.product_title}* — Pack of ${c.combo_count} @ *₹${c.combo_price}* (Coupon: *${c.discount_code}*)`
+      );
+      return [...summaryList, '', ...productLines];
+    }
+
+    return productLines;
   } catch (err) {
     return { error: err.message };
   }
@@ -320,6 +459,28 @@ export default async function handler(req, res) {
       }
 
       senderPhone = message.from;
+      const senderName = value?.contacts?.[0]?.profile?.name || '';
+      if (senderPhone && SUPABASE_URL && SUPABASE_KEY) {
+        const upsertPayload = {
+          phone: senderPhone,
+          chat_status: 'open',
+          updated_at: new Date().toISOString()
+        };
+        if (senderName) upsertPayload.customer_name = senderName;
+        axios.post(
+          `${SUPABASE_URL}/rest/v1/whatsapp_chat_settings`,
+          upsertPayload,
+          {
+            headers: {
+              'apikey': SUPABASE_KEY,
+              'Authorization': `Bearer ${SUPABASE_KEY}`,
+              'Content-Type': 'application/json',
+              'Prefer': 'resolution=merge-duplicates'
+            }
+          }
+        ).catch(() => {});
+      }
+
       if (message.type === 'audio') {
         const audioId = message.audio?.id;
         userText = audioId ? `[AUDIO_ID:${audioId}] [🎙️ Voice Note / Audio Received]` : '[🎙️ Voice Note Received]';
@@ -354,6 +515,10 @@ export default async function handler(req, res) {
 
       // Save user message to Supabase
       await saveChatMessage(senderPhone, 'user', userText);
+
+      // ─── BROADCAST PUSH NOTIFICATION ───
+      // Send Web Push notification to all subscribed devices (PC & Mobile, even when app is closed)
+      await sendPushNotificationToAll(`💬 New WhatsApp: +${senderPhone}`, userText, { url: '/' });
 
       // DO NOT send automated AI replies for audio, image, or video messages
       if (message.type === 'audio' || message.type === 'image' || message.type === 'video') {
@@ -429,24 +594,37 @@ export default async function handler(req, res) {
         toolContext += `\n${sizeInfo}`;
       }
 
-      // Prepare system prompt exactly matching 100% of n8n workflow
+      // Fetch dynamic editable AI instructions from whatsapp_settings table
+      let instLanguage = '';
+      let instOrderSecurity = '';
+      let instSizeAdvisor = '';
+      let instBrandPolicies = '';
+      let instCustom = '';
+      try {
+        const { data: setRows } = await axios.get(
+          `${SUPABASE_URL}/rest/v1/whatsapp_settings?select=*&order=id.desc&limit=1`,
+          { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } }
+        );
+        const sr = setRows?.[0] || {};
+        instLanguage = sr.inst_language || '';
+        instOrderSecurity = sr.inst_order_security || '';
+        instSizeAdvisor = sr.inst_size_advisor || '';
+        instBrandPolicies = sr.inst_brand_policies || '';
+        instCustom = sr.inst_custom || '';
+      } catch (_) {}
+
+      // Prepare system prompt exactly matching 100% of n8n workflow + editable instructions
       const systemPrompt = `Tum "11FIT AI Stylist & Sales Assistant" ho — India ke premium men's sportswear aur streetwear brand 11FIT (www.11fit.in) ke official WhatsApp shopping & support buddy!
 
 === 🗣️ DYNAMIC LANGUAGE & TONE MIRRORING (AUTOMATIC SWITCHING) ===
-- **AUTOMATIC LANGUAGE SWITCHING:** Customer jis language mein message kare, tum AUTOMATICALLY ussi language mein reply karo!
-  * Agar customer **Pure English** mein baat kare -> Tumhara reply 100% **English** mein hona chahiye.
-  * Agar customer **Hinglish (Hindi + English script)** mein baat kare -> Tum natural **Hinglish** mein reply karo.
-  * Agar customer **Pure Hindi (Devanagari)** mein likhe -> Tum **Hindi** mein reply karo.
-  * Agar customer **Punjabi, Gujarati, Marathi, Bengali** ya kisi aur Indian regional language mein baat kare -> Automatically ussi language/style mein adapt hokar reply karo!
-- **AUTOMATIC TONE MIRRORING:** Customer ke tone aur mood ko instantly mirror karo:
-  * **Casual / Bro Tone:** Agar customer "bhai", "bro", "yaar" bole -> Tum friendly, energetic aur cool shopping buddy ban jao (e.g., "Haan bhai, bilkul! 🔥").
-  * **Formal / Polite Tone:** Agar customer "Sir", "Madam", ya formal English use kare -> Tum polite, professional aur respectful executive bano (e.g., "Certainly Sir, here are your order details...").
-  * **Frustrated / Urgent / Complaint Tone:** Agar customer gusse mein ya worried ho -> Unnecessary emojis hatao, extra empathetic aur responsible bano, aur turant solution do!
+${instLanguage || `- **AUTOMATIC LANGUAGE SWITCHING:** Customer jis language mein message kare, tum AUTOMATICALLY ussi language mein reply karo!
+- **AUTOMATIC TONE MIRRORING:** Customer ke tone aur mood ko instantly mirror karo.
+- **SHORT & CRISP REPLIES:** Maximum 2 to 4 lines per reply! WhatsApp par lambe paragraphs KABHI MAT likho.`}
 
 === 🚨 CRITICAL WHATSAPP RULE: SHORT & CRISP REPLIES ONLY! ===
 - **MAXIMUM 2 TO 4 LINES PER REPLY!** WhatsApp par lambe paragraphs, essays ya boring filler lines KABHI MAT likho.
 - Directly mudde ki baat karo. Unnecessary preamble mat likho.
-- **NEVER tell customer to contact us on WhatsApp (+91 74949 61428)** because they are ALREADY chatting with us on this WhatsApp number! Instead say: "Help ke liye support@11fit.com par email karein ya yahi message chhod dein, humari team check karegi! 😊" (in customer's language).
+- **NEVER tell customer to contact us on WhatsApp (+91 74949 61428)** because they are ALREADY chatting with us on this WhatsApp number!
 
 === 🔐 CUSTOMER LIVE WHATSAPP NUMBER ===
 Customer ka Current WhatsApp Number: ${senderPhone}
@@ -457,43 +635,28 @@ Customer ka Current WhatsApp Number: ${senderPhone}
   * Har product ke saath uska **live \`combo_config\` metafield** checked hai.
   * **SIRF WAHI products ko "Combo Offer" bolkar batao jinke saath \`| *Combo Offer:* Pack of X @ ₹...\` likha hua hai!**
   * Agar toolContext mein sirf 1 ya 2 products par hi combo offer hai, toh SACH BOLO: *"Bhai, abhi humare paas is product par super hit combo offer active hai: [Card]. Baaki tees aur track pants single unit mein available hain!"*
-  * **KABHI BHI bina combo wale product (jaise single ₹499 track pant ya shorts) ko combo bolkar MAT BECHO aur KABHI BHI yeh MAT BOLO ki "Aur bhi combos hain" agar toolContext mein koi aur combo listed na ho!**
-- Format Product & Combo Showcase (Max 2-3 products, use exact card format):
-  👕 **[Product Title]**
-  💰 **Single:** ₹[Price] | **Combo Offer:** [Pack of X] @ **₹[Combo Price]** (only if present in toolContext)
-  🔗 Buy Now: https://11fit.in/products/[handle]
+  * **KABHI BHI bina combo wale product ko combo bolkar MAT BECHO aur KABHI BHI yeh MAT BOLO ki "Aur bhi combos hain" agar toolContext mein koi aur combo listed na ho!**
 
 === 🚨 CRITICAL CHAT RULE: NEVER PRINT TOOL LOGS OR BRACKETED TEXT ===
 - KABHI BHI "[SHOPIFY ORDER RESULT...]" ya "[SHOPIFY GRAPHQL...]" ya koi JSON/bracket text customer ke message mein MAT LIKHO! Sirf natural friendly text reply bhejho.
 
 === 🚨 CRITICAL SECURITY & 10-DIGIT MOBILE VERIFICATION FLOW (EXACT N8N WORKFLOW) ===
-1. **ORDER NUMBER FORMAT:** 11FIT ke order numbers "#" se start hote hain (jaise #1129, #1039). Customer "1039" bole ya "#1039", tum hamesha order number recognize karo.
-2. **AUTO-VERIFICATION & 10-DIGIT VERIFICATION FLOW (MANDATORY):**
-   - Jab tum order fetch karo, Shopify response mein order ka registered mobile number (\`registered_mobile_10_digits\`) dekho.
-   - **Step A: Current WhatsApp Number Compare Karo**
-     - Customer ke Current WhatsApp Number aur Order ke \`registered_mobile_10_digits\` ko compare karo.
-     - **✅ AGAR MATCH HO JAYE:** Short 2-3 line reply mein full order details do (Status, Tracking link). 🎉
-   - **Step B: Agar Current WhatsApp Number Match NAHI HOTA (ya Customer Alag Number se Chat Kar Raha Hai):**
-     - KABHI BHI turant order details mat batao!
-     - Politely 10-digit registered number pucho:
-       *"Aapka yeh WhatsApp number order **#1039** ke saath attached nahi hai. Security confirmation ke liye, kya aap mujhe woh **10-digit mobile number** bata sakte hain jo aapne order place karte waqt diya tha? 🙏"*
-   - **Step C: Jab Customer 10-Digit Mobile Number Bataye:**
-     - Customer ke bataye hue 10 digits ko Order ke \`registered_mobile_10_digits\` se compare karo.
-     - **NOTE:** Agar customer apna 10-digit number spaces ya dashes ke saath likhe (jaise \`91587 09012\` ya \`+91 91587-09012\`), toh uske spaces/dashes hata kar pure 10 digits compare karo (jaise \`9158709012\`).
-     - **✅ AGAR 10-DIGIT NUMBER MATCH HO JAYE:** Verification successful bolo aur order details bata do! 🎉
-     - **❌ AGAR MATCH NA HO (jaise customer ne galat/fake number diya ho):** KABHI BHI VERIFICATION SUCCESSFUL MAT BOLO aur KABHI BHI ORDER DETAILS YA TRACKING LINK MAT DO! Hamesha bolo: *"Yeh mobile number order ke saath match nahi ho raha. Help ke liye support@11fit.com par email karein! 😊"*
-3. **AGAR ORDER NOT FOUND AAYE:**
-   - *"Order **#1129** abhi system mein nahi mila. Kya order number sahi hai? Help ke liye support@11fit.com par email karein ya yahi message likh dein! 😊"*
+${instOrderSecurity || `1. ORDER NUMBER FORMAT: 11FIT ke order numbers "#" se start hote hain (jaise #1129, #1039). Customer "1039" bole ya "#1039", tum hamesha order number recognize karo.
+2. AUTO-VERIFICATION & 10-DIGIT VERIFICATION FLOW (MANDATORY):
+   - Current WhatsApp Number aur Order ke registered_mobile_10_digits ko compare karo.
+   - ✅ AGAR MATCH HO JAYE: Short 2-3 line reply mein full order details do (Status, Tracking link). 🎉
+   - ❌ AGAR MATCH NAHI HOTA: Politely 10-digit registered number pucho.
+   - AGAR 10-DIGIT NUMBER MATCH HO JAYE: Verification successful bolo aur order details bata do!
+   - AGAR MATCH NA HO: Decline karo aur support@11fit.com do.`}
 
 === 📏 11FIT AI SIZE & FIT ADVISOR RULE ===
-- Jab customer height, weight, waist, ya size ke baare mein puche:
+${instSizeAdvisor || `- Jab customer height, weight, waist, ya size ke baare mein puche:
   * [11FIT SIZE & FIT RECOMMENDATION] ya [11FIT GENERAL SIZE & FIT GUIDE] ka data use karke confident, friendly size recommend karo!
-  * Example tone: "Bhai, ~78 kg aur 5'10 height ke liye L (Large) size perfect streetwear oversized fit dega! Aur shorts mein L ya XL dono comfortably aayenge kyunki 4-Way Lycra stretchable hai. 🔥"
-  * Always reassure customer: "11FIT tees mein pehle se drop-shoulder oversized cut hota hai, toh apna normal size hi lein!"
+  * Always reassure customer: "11FIT tees mein pehle se drop-shoulder oversized cut hota hai, toh apna normal size hi lein!"`}
 
 === 🏆 11FIT BRAND & POLICIES (www.11fit.in) ===
-- **Oversized Tees & Track Pants:** Combed cotton & 4-Way Lycra. Check swipe Size Guide on 11fit.in!
-- **Shipping:** 3-5 business days across India. COD & Prepaid available. 7-Day Return/Exchange policy.
+${instBrandPolicies || `- Oversized Tees & Track Pants: Combed cotton & 4-Way Lycra. Check swipe Size Guide on 11fit.in!
+- Shipping: 3-5 business days across India. COD & Prepaid available. 7-Day Return/Exchange policy.`}${instCustom ? `\n\n=== ⭐ CUSTOM AI INSTRUCTIONS ===\n` + instCustom : ''}`;
 
 RECENT CONVERSATION HISTORY:
 ${history}
@@ -563,6 +726,13 @@ ${userText}`;
       if (!aiReply) {
         aiReply = "Abhi humara AI system busy hai. Aapki query note ho gayi hai — humari team jaldi reply karegi! Help ke liye support@11fit.com par email karein 😊";
         usedModel = 'fallback_static';
+        
+        // Trigger critical API limit alert!
+        await sendPushNotificationToAll(
+          `🚨 AI API LIMIT HIT!`,
+          `Could not reply to +${senderPhone}. Models failed! Manual takeover required immediately!`,
+          { url: '/', vibrate: [800, 200, 800, 200, 1000, 200, 1000, 200, 1000] }
+        );
       }
 
       toolsCalledList.push(`AI Model: ${usedModel}`);

@@ -4,11 +4,25 @@ import {
   MessageSquare, Terminal, Zap, Filter, Search, Eye, X, Phone,
   Send, Image as ImageIcon, Mic, FileText, Lock, Unlock, Play,
   Pause, ShieldAlert, BarChart3, Users, ArrowLeft, Check, CheckCheck,
-  Bell, BellRing, Camera, StopCircle, Upload, Trash2
+  Bell, BellRing, Camera, StopCircle, Upload, Trash2,
+  ShoppingBag, Package, Truck, ExternalLink, ChevronDown, ChevronUp, MapPin, Bot, Save
 } from 'lucide-react';
+
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+}
 
 export default function WhatsAppAIDashboard() {
   const [activeSubTab, setActiveSubTab] = useState('inbox'); // 'inbox' | 'logs'
+  const [showLockInfo, setShowLockInfo] = useState(false); // toggle 24h popup
 
   // --- INBOX STATE ---
   const [chats, setChats] = useState([]);
@@ -17,16 +31,23 @@ export default function WhatsAppAIDashboard() {
   const [loadingChats, setLoadingChats] = useState(false);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [inboxSearch, setInboxSearch] = useState('');
+  const [chatStatusFilter, setChatStatusFilter] = useState('open'); // 'open' | 'closed' | 'all'
   const [replyType, setReplyType] = useState('text'); // 'text' | 'image' | 'audio' | 'template'
   const [replyText, setReplyText] = useState('');
   const [mediaUrl, setMediaUrl] = useState('');
   const [selectedTemplate, setSelectedTemplate] = useState('combo_offer_reengage');
   const [sendingReply, setSendingReply] = useState(false);
   const messagesEndRef = useRef(null);
+  const shouldScrollRef = useRef(false); // only scroll to bottom on first load or send
 
   // --- NOTIFICATIONS STATE ---
-  const [notifEnabled, setNotifEnabled] = useState(false);
+  // Persist bell state across refreshes via localStorage
+  const [notifEnabled, setNotifEnabled] = useState(() => {
+    try { return localStorage.getItem('11fit_notif_enabled') === 'true'; } catch { return false; }
+  });
   const lastMsgTimestampRef = useRef(0);
+  const swRegistrationRef = useRef(null);
+  const togglingAIRef = useRef(new Set());
 
   // --- CAMERA & VOICE RECORDING STATE ---
   const [mediaPreviewBase64, setMediaPreviewBase64] = useState(null);
@@ -34,6 +55,15 @@ export default function WhatsAppAIDashboard() {
   const [isRecording, setIsRecording] = useState(false);
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
+
+  // --- AI INSTRUCTIONS STATE ---
+  const [instLanguage, setInstLanguage] = useState('');
+  const [instOrderSecurity, setInstOrderSecurity] = useState('');
+  const [instSizeAdvisor, setInstSizeAdvisor] = useState('');
+  const [instBrandPolicies, setInstBrandPolicies] = useState('');
+  const [instCustom, setInstCustom] = useState('');
+  const [instCategoryTab, setInstCategoryTab] = useState('language'); // 'language' | 'security' | 'size' | 'brand' | 'custom'
+  const [savingInst, setSavingInst] = useState(false);
 
   // --- LOGS & ANALYTICS STATE ---
   const [executions, setExecutions] = useState([]);
@@ -47,6 +77,25 @@ export default function WhatsAppAIDashboard() {
   const [loadingLogs, setLoadingLogs] = useState(false);
   const [filterStatus, setFilterStatus] = useState('ALL');
   const [searchQuery, setSearchQuery] = useState('');
+
+  // --- CUSTOMER ORDERS MODAL STATE ---
+  const [showOrdersModal, setShowOrdersModal] = useState(false);
+  const [ordersLoading, setOrdersLoading] = useState(false);
+  const [customerOrders, setCustomerOrders] = useState([]);
+  const [ordersCustomerPhone, setOrdersCustomerPhone] = useState('');
+  const [expandedOrderId, setExpandedOrderId] = useState(null);
+  const [sendingOrderAction, setSendingOrderAction] = useState(null);
+
+  // --- ORDERS SUMMARY & FILTER STATES ---
+  const [ordersSummaryMap, setOrdersSummaryMap] = useState({});
+  const [inboxOrderFilter, setInboxOrderFilter] = useState('all');
+  const [orderModalFilter, setOrderModalFilter] = useState('active');
+
+  const getOrderSummaryForPhone = (phoneStr) => {
+    if (!phoneStr) return null;
+    const digits = String(phoneStr).replace(/\D/g, '').slice(-10);
+    return ordersSummaryMap[digits] || null;
+  };
 
   // Play audible notification chime on mobile / desktop
   const playAlertBeep = () => {
@@ -67,13 +116,36 @@ export default function WhatsAppAIDashboard() {
   };
 
   // --- REQUEST PUSH NOTIFICATIONS ---
+  const registerPushSubscription = async (reg) => {
+    try {
+      let sub = await reg.pushManager.getSubscription();
+      if (!sub) {
+        // We use our constant VAPID key
+        const vapidPublicKey = 'BIqLUY30-N9qSJrCz4tF1C65XgCRVyr-1TmiCTG2MNFL2_8_EAC4o626ehSdKSM5uUpNPJvpcNCjwOen8evAjRU';
+        sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(vapidPublicKey)
+        });
+      }
+      // Send subscription to backend
+      await fetch('/api/webpush', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'subscribe', subscription: sub })
+      });
+      console.log('✅ Web Push Subscription Registered!');
+    } catch (err) {
+      console.error('Failed to register Web Push:', err);
+    }
+  };
+
   const enableNotifications = async () => {
     playAlertBeep();
     if (typeof navigator !== 'undefined' && navigator.vibrate) {
       try { navigator.vibrate([100, 50, 100]); } catch (_) {}
     }
     if (!('Notification' in window)) {
-      alert('This browser does not support desktop/mobile notifications, but audible beep alerts are now active!');
+      alert('Browser does not support notifications, but audible beep alerts are active!');
       setNotifEnabled(true);
       return;
     }
@@ -81,22 +153,18 @@ export default function WhatsAppAIDashboard() {
     if (perm === 'granted') {
       setNotifEnabled(true);
       try {
-        if ('serviceWorker' in navigator && navigator.serviceWorker.ready) {
-          navigator.serviceWorker.ready.then(reg => reg.showNotification('11FIT AI Command Center', {
-            body: '🔔 Push notifications & beep alerts enabled!'
-          })).catch(() => {
-            new Notification('11FIT AI Command Center', {
-              body: '🔔 Push notifications & beep alerts enabled!'
-            });
-          });
-        } else {
-          new Notification('11FIT AI Command Center', {
-            body: '🔔 Push notifications & beep alerts enabled!'
-          });
+        if ('serviceWorker' in navigator) {
+          const reg = await navigator.serviceWorker.ready;
+          await registerPushSubscription(reg);
+          // Show test message
+          reg.active?.postMessage({ type: 'TEST_NOTIFICATION' });
+          swRegistrationRef.current = reg;
         }
-      } catch (_) {}
+      } catch (err) {
+        console.error(err);
+      }
     } else {
-      alert('Notification permission denied by browser, but audible beep alerts will still play!');
+      alert('Notification permission denied. Audible beep alerts will still play when app is open.');
       setNotifEnabled(true);
     }
   };
@@ -172,6 +240,31 @@ export default function WhatsAppAIDashboard() {
     }
   };
 
+  const playCriticalAlertBeep = () => {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sawtooth'; // Harsh siren sound
+      
+      const duration = 5.0; // 5 seconds long alert
+      for (let t = 0; t < duration; t += 0.5) {
+        osc.frequency.setValueAtTime(800, ctx.currentTime + t); 
+        osc.frequency.linearRampToValueAtTime(1200, ctx.currentTime + t + 0.25);
+        osc.frequency.linearRampToValueAtTime(800, ctx.currentTime + t + 0.5);
+      }
+      
+      gain.gain.setValueAtTime(0.4, ctx.currentTime);
+      gain.gain.setValueAtTime(0.4, ctx.currentTime + duration - 0.5);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+      
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + duration);
+    } catch (_) {}
+  };
+
   // --- FETCH FUNCTIONS ---
   const fetchChats = async (isQuiet = false) => {
     if (!isQuiet) setLoadingChats(true);
@@ -185,21 +278,54 @@ export default function WhatsAppAIDashboard() {
         if (loadedChats.length > 0) {
           const newest = loadedChats[0];
           const newestTime = new Date(newest.created_at).getTime();
-          if (lastMsgTimestampRef.current > 0 && newestTime > lastMsgTimestampRef.current && newest.last_role === 'user') {
-            triggerAlertNotification(
-              `💬 New WhatsApp from ${newest.phone}`,
-              newest.last_message
-            );
+          if (lastMsgTimestampRef.current > 0 && newestTime > lastMsgTimestampRef.current) {
+            if (newest.last_role === 'user') {
+              triggerAlertNotification(
+                `💬 New WhatsApp from ${newest.phone}`,
+                newest.last_message
+              );
+            } else if (newest.last_role === 'assistant' && newest.last_message?.includes('Abhi humara AI system busy hai')) {
+              playCriticalAlertBeep();
+              triggerAlertNotification(
+                `🚨 AI API LIMIT HIT!`,
+                `Manual takeover required for ${newest.phone}!`
+              );
+            }
           }
           lastMsgTimestampRef.current = newestTime;
         }
 
-        setChats(loadedChats);
+        setChats(prevChats => {
+          return loadedChats.map(loadedChat => {
+            if (togglingAIRef.current.has(loadedChat.phone)) {
+              const existing = prevChats.find(p => p.phone === loadedChat.phone);
+              if (existing) {
+                return { ...loadedChat, ai_paused: existing.ai_paused };
+              }
+            }
+            return loadedChat;
+          });
+        });
+        
         if (selectedChat) {
           const updated = loadedChats.find(c => c.phone === selectedChat.phone);
-          if (updated) setSelectedChat(updated);
+          if (updated) {
+            setSelectedChat(prev => {
+              if (togglingAIRef.current.has(updated.phone)) {
+                return { ...updated, ai_paused: prev.ai_paused };
+              }
+              return updated;
+            });
+          }
         }
       }
+
+      fetch('/api/shopify-orders-summary')
+        .then(r => r.json())
+        .then(d => {
+          if (d.summary) setOrdersSummaryMap(d.summary);
+        })
+        .catch(() => {});
     } catch (err) {
       console.error('Failed to fetch chats:', err);
     } finally {
@@ -209,12 +335,37 @@ export default function WhatsAppAIDashboard() {
 
   const fetchMessages = async (phone, isQuiet = false) => {
     if (!phone) return;
-    if (!isQuiet) setLoadingMessages(true);
+    if (!isQuiet) {
+      setLoadingMessages(true);
+      shouldScrollRef.current = true; // scroll to bottom on first load
+    }
     try {
       const res = await fetch(`/api/whatsapp-inbox?action=messages&phone=${encodeURIComponent(phone)}`);
       if (res.ok) {
         const data = await res.json();
-        setMessages(data.messages || []);
+        const incoming = data.messages || [];
+        if (isQuiet) {
+          // Silent update: only add truly NEW messages at the end, no scroll
+          setMessages(prev => {
+            const hasOptimistic = prev.some(m => m._sending);
+            if (hasOptimistic) {
+              return incoming;
+            }
+            if (incoming.length <= prev.length) return prev; // nothing new
+            // Check if last known message matches — if yes, just append new tail
+            const prevLastId = prev[prev.length - 1]?.id;
+            const incomingLastId = incoming[incoming.length - 1]?.id;
+            if (incomingLastId === prevLastId) return prev; // identical
+            // New messages arrived — append only the new ones, preserve scroll
+            const newOnes = incoming.slice(prev.length);
+            if (newOnes.length > 0) {
+              shouldScrollRef.current = true; // new message came in, scroll to it
+            }
+            return incoming;
+          });
+        } else {
+          setMessages(incoming);
+        }
       }
     } catch (err) {
       console.error('Failed to fetch messages:', err);
@@ -239,30 +390,217 @@ export default function WhatsAppAIDashboard() {
     }
   };
 
+  // --- CUSTOMER ORDERS MODAL & WHATSAPP SENDER ---
+  const handleOpenCustomerOrders = async (phone) => {
+    if (!phone) return;
+    setOrdersCustomerPhone(phone);
+    setShowOrdersModal(true);
+    setOrdersLoading(true);
+    setCustomerOrders([]);
+    setExpandedOrderId(null);
+
+    try {
+      const cleanDigits = phone.replace(/\D/g, '');
+      const last10 = cleanDigits.slice(-10);
+
+      const res = await fetch(`/api/shopify-customer-orders?phone=${encodeURIComponent(last10)}`);
+      if (res.ok) {
+        const data = await res.json();
+        let ordersList = data.orders || [];
+        ordersList.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+        setCustomerOrders(ordersList);
+        if (ordersList.length > 0) {
+          setExpandedOrderId(ordersList[0].id);
+        }
+      } else {
+        console.error('Failed to load customer orders from Shopify');
+      }
+    } catch (err) {
+      console.error('Error loading customer orders:', err);
+    } finally {
+      setOrdersLoading(false);
+    }
+  };
+
+  const handleSendOrderWhatsApp = async (order, actionType) => {
+    if (!ordersCustomerPhone || !order) return;
+    const actionKey = `${order.id}-${actionType}`;
+    if (sendingOrderAction) return;
+    setSendingOrderAction(actionKey);
+
+    const customerName = order.shipping_address?.first_name || order.customer?.first_name || 'Customer';
+    const orderName = order.name || `#${order.order_number}`;
+
+    let msgText = '';
+
+    const finStatus = (order.financial_status || '').toLowerCase();
+    const totalVal = order.total_price || 0;
+    const paymentStatusStr = finStatus === 'paid'
+      ? `💳 PAID ONLINE (Prepaid - ₹${totalVal})`
+      : finStatus === 'partially_paid'
+      ? `🪙 PARTIAL PAID (Advance Paid | Balance to Pay on COD: ₹${totalVal})`
+      : `💵 CASH ON DELIVERY (COD | Please Pay ₹${totalVal} on Delivery)`;
+
+    if (actionType === 'details') {
+      const itemsList = (order.line_items || [])
+        .map(i => `• ${i.quantity}x ${i.title} ${i.variant_title ? `(${i.variant_title})` : ''} - ₹${i.price}`)
+        .join('\n');
+      const addressStr = order.shipping_address
+        ? `${order.shipping_address.first_name || ''} ${order.shipping_address.last_name || ''}, ${order.shipping_address.address1 || ''}, ${order.shipping_address.city || ''} - ${order.shipping_address.zip || ''}`
+        : 'N/A';
+      const statusStr = order.fulfillment_status === 'fulfilled' ? '🚚 Fulfilled / Dispatched' : (order.cancelled_at ? '❌ Cancelled' : '⏳ Processing');
+
+      msgText = `🛍️ *Order Details — ${orderName}*\n\n` +
+        `Hi ${customerName}, here are your order details:\n\n` +
+        `*Items Ordered:*\n${itemsList || '• Order Items'}\n\n` +
+        `*Total Amount:* ₹${order.total_price || 0}\n` +
+        `*Payment Status:* ${paymentStatusStr}\n` +
+        `*Order Status:* ${statusStr}\n` +
+        `*Shipping Address:* ${addressStr}\n\n` +
+        `Thank you for shopping with *11FIT*! ❤️`;
+    } else if (actionType === 'shipping') {
+      const fulfillment = (order.fulfillments && order.fulfillments.length > 0) ? order.fulfillments[0] : null;
+      const trackingCompany = fulfillment?.tracking_company || 'Courier Partner';
+      const trackingNumber = fulfillment?.tracking_number || 'N/A';
+      const trackingUrl = fulfillment?.tracking_url || (fulfillment?.tracking_urls && fulfillment.tracking_urls[0]) || '';
+
+      msgText = `🚚 *Shipping & Tracking Update — Order ${orderName}*\n\n` +
+        `Hi ${customerName}, great news! Your order has been dispatched.\n\n` +
+        `*Payment Details:* ${paymentStatusStr}\n` +
+        `*Courier Partner:* ${trackingCompany}\n` +
+        `*Tracking Number:* ${trackingNumber}\n` +
+        (trackingUrl ? `*Track Your Package:* ${trackingUrl}\n\n` : '\n') +
+        `Your package is on its way! Let us know if you need any assistance. 📦`;
+    }
+
+    try {
+      const res = await fetch('/api/whatsapp-inbox', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'send_message',
+          phone: ordersCustomerPhone,
+          type: 'text',
+          text: msgText
+        })
+      });
+      if (res.ok) {
+        if (selectedChat?.phone === ordersCustomerPhone) {
+          await fetchMessages(ordersCustomerPhone, false);
+        }
+        alert(`✅ ${actionType === 'details' ? 'Order Details' : 'Shipping Info'} sent to WhatsApp (${formatPhone(ordersCustomerPhone)})!`);
+      } else {
+        const err = await res.json();
+        alert(`❌ Error sending message: ${err.error || 'Failed'}`);
+      }
+    } catch (err) {
+      alert('❌ Network error sending message');
+    } finally {
+      setSendingOrderAction(null);
+    }
+  };
+
+  // --- PERSIST BELL STATE + REGISTER SERVICE WORKER ---
+  useEffect(() => {
+    try { localStorage.setItem('11fit_notif_enabled', notifEnabled ? 'true' : 'false'); } catch {}
+
+    // Register background Service Worker for true push notifications
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js', { scope: '/' }).then((reg) => {
+        swRegistrationRef.current = reg;
+        if (Notification.permission === 'granted' && notifEnabled) {
+          registerPushSubscription(reg);
+        }
+      }).catch(() => {});
+    }
+  }, [notifEnabled]);
+
+  // --- AI INSTRUCTIONS HANDLERS ---
+  const fetchInstructions = async () => {
+    try {
+      const res = await fetch('/api/whatsapp-settings');
+      if (res.ok) {
+        const data = await res.json();
+        setInstLanguage(data.inst_language || '');
+        setInstOrderSecurity(data.inst_order_security || '');
+        setInstSizeAdvisor(data.inst_size_advisor || '');
+        setInstBrandPolicies(data.inst_brand_policies || '');
+        setInstCustom(data.inst_custom || '');
+      }
+    } catch (_) {}
+  };
+
+  const handleSaveInstructions = async () => {
+    setSavingInst(true);
+    try {
+      const res = await fetch('/api/whatsapp-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          inst_language: instLanguage,
+          inst_order_security: instOrderSecurity,
+          inst_size_advisor: instSizeAdvisor,
+          inst_brand_policies: instBrandPolicies,
+          inst_custom: instCustom
+        })
+      });
+      const data = await res.json();
+      if (res.ok && data?.success) {
+        alert('✅ AI Instructions updated and activated for WhatsApp Bot!');
+      } else {
+        alert('❌ Failed to save instructions: ' + (data?.error || 'Unknown error'));
+      }
+    } catch (e) {
+      alert('❌ Network error saving instructions');
+    } finally {
+      setSavingInst(false);
+    }
+  };
+
+  // --- FOREGROUND POLLING + ONLINE RECONNECT ---
   useEffect(() => {
     fetchChats(false);
     fetchExecutions(false);
+    fetchInstructions();
     const interval = setInterval(() => {
       fetchChats(true);
       fetchExecutions(true);
       if (selectedChat?.phone && activeSubTab === 'inbox') {
-        fetchMessages(selectedChat.phone, true); // Silent update without screen jumping
+        fetchMessages(selectedChat.phone, true);
       }
     }, 7000);
-    return () => clearInterval(interval);
+
+    // Auto-refresh when internet comes back
+    const handleOnline = () => {
+      fetchChats(false);
+      fetchExecutions(false);
+      if (selectedChat?.phone) fetchMessages(selectedChat.phone, false);
+    };
+    window.addEventListener('online', handleOnline);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('online', handleOnline);
+    };
   }, [activeSubTab, selectedChat?.phone]);
 
   useEffect(() => {
     if (selectedChat?.phone) {
-      fetchMessages(selectedChat.phone, false); // Only spin on chat change
+      fetchMessages(selectedChat.phone, false);
     }
   }, [selectedChat?.phone]);
 
   useLayoutEffect(() => {
-    if (messagesEndRef.current) {
+    if (shouldScrollRef.current && messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior: 'instant', block: 'end' });
+      shouldScrollRef.current = false;
     }
   }, [messages, selectedChat?.phone]);
+
+  // Reset scroll flag when switching to a new chat
+  useEffect(() => {
+    shouldScrollRef.current = true;
+  }, [selectedChat?.phone]);
 
   // --- 24 HOUR CLOSING TIME CALCULATION ---
   const get24HourStatus = (chat) => {
@@ -291,8 +629,16 @@ export default function WhatsAppAIDashboard() {
   // --- HANDLERS ---
   const handleToggleAIPause = async (chat) => {
     const newPausedState = !chat.ai_paused;
+    togglingAIRef.current.add(chat.phone);
+    
+    // Optimistic update immediately so UI responds instantly
+    setChats(prev => prev.map(c => c.phone === chat.phone ? { ...c, ai_paused: newPausedState } : c));
+    if (selectedChat?.phone === chat.phone) {
+      setSelectedChat(prev => ({ ...prev, ai_paused: newPausedState }));
+    }
+    
     try {
-      const res = await fetch('/api/whatsapp-inbox', {
+      await fetch('/api/whatsapp-inbox', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -301,14 +647,40 @@ export default function WhatsAppAIDashboard() {
           ai_paused: newPausedState
         })
       });
-      if (res.ok) {
-        setChats(prev => prev.map(c => c.phone === chat.phone ? { ...c, ai_paused: newPausedState } : c));
-        if (selectedChat?.phone === chat.phone) {
-          setSelectedChat(prev => ({ ...prev, ai_paused: newPausedState }));
-        }
-      }
+      // Allow time for DB/cache to settle before trusting server data again
+      setTimeout(() => {
+        togglingAIRef.current.delete(chat.phone);
+      }, 3000);
+      fetchChats(true);
     } catch (err) {
       console.error('Failed to toggle AI state:', err);
+      togglingAIRef.current.delete(chat.phone);
+      // Revert optimistic update on network error
+      setChats(prev => prev.map(c => c.phone === chat.phone ? { ...c, ai_paused: chat.ai_paused } : c));
+      if (selectedChat?.phone === chat.phone) {
+        setSelectedChat(prev => ({ ...prev, ai_paused: chat.ai_paused }));
+      }
+    }
+  };
+
+  const handleSetChatStatus = async (chat, newStatus) => {
+    setChats(prev => prev.map(c => c.phone === chat.phone ? { ...c, chat_status: newStatus } : c));
+    if (selectedChat?.phone === chat.phone) {
+      setSelectedChat(prev => ({ ...prev, chat_status: newStatus }));
+    }
+    try {
+      await fetch('/api/whatsapp-inbox', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'set_status',
+          phone: chat.phone,
+          chat_status: newStatus
+        })
+      });
+      fetchChats(true);
+    } catch (err) {
+      console.error('Failed to update chat status:', err);
     }
   };
 
@@ -319,6 +691,17 @@ export default function WhatsAppAIDashboard() {
     // A. Direct Media Upload via Meta API (if photo or voice note was captured)
     if (mediaPreviewBase64) {
       setSendingReply(true);
+      // Optimistic bubble for media
+      const optimisticMedia = {
+        id: `_opt_${Date.now()}`,
+        phone: selectedChat.phone,
+        role: 'assistant',
+        content: mediaPreviewType === 'image' ? '📷 Photo' : '🎙️ Voice Note',
+        created_at: new Date().toISOString(),
+        _sending: true
+      };
+      setMessages(prev => [...prev, optimisticMedia]);
+      shouldScrollRef.current = true;
       try {
         const res = await fetch('/api/whatsapp-inbox', {
           method: 'POST',
@@ -335,12 +718,16 @@ export default function WhatsAppAIDashboard() {
           setMediaPreviewBase64(null);
           setMediaPreviewType(null);
           setReplyText('');
-          await fetchMessages(selectedChat.phone, true);
+          shouldScrollRef.current = true;
+          await fetchMessages(selectedChat.phone, false);
         } else {
+          // Remove optimistic bubble on error
+          setMessages(prev => prev.filter(m => m.id !== optimisticMedia.id));
           const errData = await res.json();
           alert(`Error uploading media: ${errData.error || 'Failed'}`);
         }
       } catch (err) {
+        setMessages(prev => prev.filter(m => m.id !== optimisticMedia.id));
         alert('Network error uploading photo/audio');
       } finally {
         setSendingReply(false);
@@ -351,6 +738,19 @@ export default function WhatsAppAIDashboard() {
     // B. Standard Text / URL / Template Send
     if (replyType === 'text' && !replyText.trim()) return;
     if ((replyType === 'image' || replyType === 'audio') && !mediaUrl.trim()) return;
+
+    // Optimistic bubble — appears instantly in chat
+    const optimisticText = replyType === 'template' ? '📋 Template message sent' : (replyText || mediaUrl);
+    const optimisticMsg = {
+      id: `_opt_${Date.now()}`,
+      phone: selectedChat.phone,
+      role: 'assistant',
+      content: optimisticText,
+      created_at: new Date().toISOString(),
+      _sending: true
+    };
+    setMessages(prev => [...prev, optimisticMsg]);
+    shouldScrollRef.current = true;
 
     setSendingReply(true);
     try {
@@ -369,12 +769,16 @@ export default function WhatsAppAIDashboard() {
       if (res.ok) {
         setReplyText('');
         setMediaUrl('');
-        await fetchMessages(selectedChat.phone, true);
+        shouldScrollRef.current = true;
+        await fetchMessages(selectedChat.phone, false);
       } else {
+        // Remove optimistic bubble on error
+        setMessages(prev => prev.filter(m => m.id !== optimisticMsg.id));
         const errData = await res.json();
         alert(`Error: ${errData.error || 'Failed to send message'}`);
       }
     } catch (err) {
+      setMessages(prev => prev.filter(m => m.id !== optimisticMsg.id));
       console.error('Failed to send reply:', err);
       alert('Network error sending reply');
     } finally {
@@ -382,11 +786,21 @@ export default function WhatsAppAIDashboard() {
     }
   };
 
-  const filteredChats = chats.filter(c =>
-    !inboxSearch ||
-    c.phone?.toLowerCase().includes(inboxSearch.toLowerCase()) ||
-    c.last_message?.toLowerCase().includes(inboxSearch.toLowerCase())
-  );
+  const openChatsCount = chats.filter(c => (c.chat_status || 'open') === 'open').length;
+  const closedChatsCount = chats.filter(c => c.chat_status === 'closed').length;
+
+  const filteredChats = chats.filter(c => {
+    const matchesSearch =
+      !inboxSearch ||
+      c.phone?.toLowerCase().includes(inboxSearch.toLowerCase()) ||
+      c.last_message?.toLowerCase().includes(inboxSearch.toLowerCase()) ||
+      c.customer_name?.toLowerCase().includes(inboxSearch.toLowerCase());
+    const matchesStatus =
+      chatStatusFilter === 'all' ||
+      (chatStatusFilter === 'open' && (c.chat_status || 'open') === 'open') ||
+      (chatStatusFilter === 'closed' && c.chat_status === 'closed');
+    return matchesSearch && matchesStatus;
+  });
 
   const formatPhone = (p) => {
     if (!p) return 'N/A';
@@ -399,6 +813,31 @@ export default function WhatsAppAIDashboard() {
     { id: 'abandoned_cart_reminder', label: '🛒 Abandoned Cart Recovery' },
     { id: 'support_ticket_update', label: '💬 Support Assistance Update' }
   ];
+
+  const renderTextWithLinks = (text) => {
+    if (!text) return null;
+    const urlRegex = /(https?:\/\/[^\s,'")<>]+|www\.[^\s,'")<>]+)/g;
+    const parts = text.split(urlRegex);
+    return parts.map((part, idx) => {
+      if (!part) return null;
+      if (part.match(/^(https?:\/\/|www\.)/i)) {
+        const href = part.startsWith('www.') ? `https://${part}` : part;
+        return (
+          <a
+            key={idx}
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-blue-400 hover:text-blue-300 underline font-semibold break-all cursor-pointer transition-colors"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {part}
+          </a>
+        );
+      }
+      return part;
+    });
+  };
 
   const renderMessageContent = (content) => {
     if (!content) return null;
@@ -416,7 +855,7 @@ export default function WhatsAppAIDashboard() {
             <source src={`/api/whatsapp-inbox?action=media&id=${id}`} type="audio/mpeg" />
             Your browser does not support audio playback.
           </audio>
-          {textWithoutId && <p className="text-sm whitespace-pre-wrap">{textWithoutId}</p>}
+          {textWithoutId && <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">{renderTextWithLinks(textWithoutId)}</p>}
         </div>
       );
     }
@@ -435,7 +874,7 @@ export default function WhatsAppAIDashboard() {
               className="max-w-[240px] max-h-[240px] rounded-lg object-cover border border-slate-700 hover:opacity-90 transition-opacity"
             />
           </a>
-          {textWithoutId && <p className="text-sm whitespace-pre-wrap">{textWithoutId}</p>}
+          {textWithoutId && <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">{renderTextWithLinks(textWithoutId)}</p>}
         </div>
       );
     }
@@ -450,20 +889,20 @@ export default function WhatsAppAIDashboard() {
           <video controls className="max-w-[240px] rounded-lg border border-slate-700">
             <source src={`/api/whatsapp-inbox?action=media&id=${id}`} type="video/mp4" />
           </video>
-          {textWithoutId && <p className="text-sm whitespace-pre-wrap">{textWithoutId}</p>}
+          {textWithoutId && <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">{renderTextWithLinks(textWithoutId)}</p>}
         </div>
       );
     }
 
-    return <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">{content}</p>;
+    return <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">{renderTextWithLinks(content)}</p>;
   };
 
   const status24h = get24HourStatus(selectedChat);
 
   return (
-    <div className="space-y-6">
+    <div className="flex-1 flex flex-col min-h-0 w-full h-full bg-[#0B0F19]">
       {/* COMPACT TOP SUB-TAB & ALERTS NAV BAR */}
-      <div className="flex items-center justify-between gap-3 bg-slate-900/80 px-3.5 py-2.5 rounded-2xl border border-slate-800 shadow-xl backdrop-blur-md">
+      <div className="flex items-center justify-between gap-3 bg-[#0F172A] px-3.5 py-2.5 border-b border-slate-800 shrink-0 shadow-sm z-10">
         <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800">
           <button
             onClick={() => setActiveSubTab('inbox')}
@@ -487,6 +926,17 @@ export default function WhatsAppAIDashboard() {
             <BarChart3 className="w-3.5 h-3.5" />
             AI Charts & Logs
           </button>
+          <button
+            onClick={() => setActiveSubTab('instructions')}
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+              activeSubTab === 'instructions'
+                ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/30'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+            }`}
+          >
+            <Bot className="w-3.5 h-3.5" />
+            AI Instructions & Prompts
+          </button>
         </div>
 
         <button
@@ -506,10 +956,10 @@ export default function WhatsAppAIDashboard() {
       {/* TAB 1: LIVE CHAT INBOX & MANUAL TAKEOVER                  */}
       {/* ========================================================= */}
       {activeSubTab === 'inbox' && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 h-[720px]">
-          {/* LEFT PANE: CHAT LIST */}
-          <div className={`lg:col-span-4 bg-slate-900/90 rounded-2xl border border-slate-800 flex-col overflow-hidden shadow-xl ${selectedChat ? 'hidden lg:flex' : 'flex'}`}>
-            <div className="p-4 border-b border-slate-800 bg-slate-950/60 flex items-center justify-between">
+        <div className="relative flex-1 min-h-0 lg:grid lg:grid-cols-12 lg:gap-6 lg:p-6">
+          {/* LEFT PANE: CHAT LIST - full height on mobile, grid col on desktop */}
+          <div className={`lg:col-span-4 bg-slate-900/90 lg:rounded-2xl border-r lg:border border-slate-800 flex flex-col overflow-hidden shadow-xl h-full ${selectedChat ? 'hidden lg:flex' : 'flex'}`}>
+            <div className="p-4 border-b border-slate-800 bg-slate-950/60 flex items-center justify-between shrink-0">
               <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
                 <Users className="w-4 h-4 text-emerald-400" />
                 Customer Chats
@@ -523,17 +973,54 @@ export default function WhatsAppAIDashboard() {
               </button>
             </div>
 
-            {/* SEARCH BOX */}
-            <div className="p-3 border-b border-slate-800 bg-slate-950/30">
+            {/* SEARCH BOX & OPEN/CLOSED FILTER */}
+            <div className="p-3 border-b border-slate-800 bg-slate-950/30 space-y-2.5">
               <div className="relative">
                 <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-500" />
                 <input
                   type="text"
-                  placeholder="Search phone or message..."
+                  placeholder="Search phone, name or message..."
                   value={inboxSearch}
                   onChange={(e) => setInboxSearch(e.target.value)}
                   className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-9 pr-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
                 />
+              </div>
+
+              {/* Chat Status Filter Pills */}
+              <div className="grid grid-cols-3 gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800 text-[11px] font-bold">
+                <button
+                  type="button"
+                  onClick={() => setChatStatusFilter('open')}
+                  className={`py-1 rounded-md transition-all flex items-center justify-center gap-1 ${
+                    chatStatusFilter === 'open'
+                      ? 'bg-emerald-600 text-white shadow-sm'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <span>Open ({openChatsCount})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setChatStatusFilter('closed')}
+                  className={`py-1 rounded-md transition-all flex items-center justify-center gap-1 ${
+                    chatStatusFilter === 'closed'
+                      ? 'bg-slate-700 text-white shadow-sm'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <span>Closed ({closedChatsCount})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setChatStatusFilter('all')}
+                  className={`py-1 rounded-md transition-all flex items-center justify-center gap-1 ${
+                    chatStatusFilter === 'all'
+                      ? 'bg-slate-800 text-white shadow-sm'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <span>All ({chats.length})</span>
+                </button>
               </div>
             </div>
 
@@ -558,9 +1045,26 @@ export default function WhatsAppAIDashboard() {
                     >
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center justify-between gap-2 mb-1">
-                          <span className="font-bold text-sm text-white truncate">
-                            {formatPhone(chat.phone)}
-                          </span>
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); handleOpenCustomerOrders(chat.phone); }}
+                            className="font-bold text-sm text-white hover:text-emerald-400 truncate flex items-center gap-1.5 cursor-pointer transition-colors"
+                            title="Click to view Customer Orders"
+                          >
+                            <div className="flex flex-col text-left min-w-0">
+                              <span className="truncate">
+                                {chat.customer_name || formatPhone(chat.phone)}
+                              </span>
+                              {chat.customer_name && (
+                                <span className="text-[10px] text-slate-400 font-normal">
+                                  {formatPhone(chat.phone)}
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold flex items-center gap-0.5">
+                              🛍️ Orders
+                            </span>
+                          </button>
                           <span className="text-[10px] text-slate-500 whitespace-nowrap">
                             {new Date(chat.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                           </span>
@@ -576,34 +1080,42 @@ export default function WhatsAppAIDashboard() {
                               24h Open
                             </span>
                           ) : (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20" title="24-hour customer service window has expired.">
                               <Lock className="w-3 h-3" />
-                              24h Locked
+                              Window Closed ({chat.hours_elapsed}h)
+                            </span>
+                          )}
+                          {chat.chat_status === 'closed' && (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-semibold bg-slate-800 text-slate-400 border border-slate-700">
+                              ✓ Solved
                             </span>
                           )}
 
-                          {chat.ai_paused ? (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-rose-500/10 text-rose-400 border border-rose-500/20">
-                              <Pause className="w-3 h-3" />
-                              AI Paused
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-blue-500/10 text-blue-400 border border-blue-500/20">
-                              <Play className="w-3 h-3" />
-                              AI Auto
-                            </span>
-                          )}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleToggleAI(chat.phone, !chat.ai_paused);
+                            }}
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold border transition-all cursor-pointer ${
+                              chat.ai_paused
+                                ? 'bg-rose-500/20 text-rose-300 border-rose-500/30 hover:bg-rose-500/30'
+                                : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/30'
+                            }`}
+                            title={chat.ai_paused ? "AI auto-reply is currently PAUSED. Click to enable AI." : "AI is automatically replying. Click to pause AI."}
+                          >
+                            <span>{chat.ai_paused ? '⏸️ AI Paused' : '🤖 AI Active'}</span>
+                          </button>
+                          <a
+                            href={`tel:+${chat.phone}`}
+                            onClick={(e) => e.stopPropagation()}
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-slate-800 hover:bg-emerald-600 text-slate-300 hover:text-white border border-slate-700 transition-colors ml-auto"
+                            title={`Call ${formatPhone(chat.phone)} directly from mobile`}
+                          >
+                            <Phone className="w-3 h-3" />
+                          </a>
                         </div>
                       </div>
-
-                      <a
-                        href={`tel:+${chat.phone}`}
-                        onClick={(e) => e.stopPropagation()}
-                        title={`Call ${formatPhone(chat.phone)} directly from mobile`}
-                        className="p-2.5 rounded-xl bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white transition-all shadow-md shrink-0"
-                      >
-                        <Phone className="w-4 h-4" />
-                      </a>
                     </div>
                   );
                 })
@@ -611,24 +1123,35 @@ export default function WhatsAppAIDashboard() {
             </div>
           </div>
 
-          {/* RIGHT PANE: WHATSAPP-STYLE DARK CONVERSATION VIEW */}
-          <div className={`lg:col-span-8 bg-[#0b141a] rounded-2xl border border-slate-800 flex-col overflow-hidden shadow-2xl ${selectedChat ? 'flex' : 'hidden lg:flex'}`}>
+          {/* RIGHT PANE: fixed full-screen on mobile, grid col on desktop */}
+          <div className={`lg:col-span-8 bg-slate-900/90 lg:rounded-2xl border-l lg:border border-slate-800 flex flex-col overflow-hidden shadow-xl h-full ${!selectedChat ? 'hidden lg:flex' : 'flex'}`}>
             {selectedChat ? (
               <>
-                {/* COMPACT 1-ROW CHAT HEADER & CONTROLS */}
-                <div className="py-2 px-3 border-b border-slate-800 bg-[#202c33] flex items-center justify-between gap-2 shrink-0">
-                  <div className="flex items-center gap-2 min-w-0">
+                {/* ACTIVE CHAT HEADER */}
+                <div className="p-4 border-b border-slate-800 bg-slate-950/60 flex items-center justify-between shrink-0">
+                  <div className="flex items-center gap-3 min-w-0">
                     <button
+                      type="button"
                       onClick={() => setSelectedChat(null)}
                       className="lg:hidden p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors shrink-0"
                       title="Back to Customer List"
                     >
                       <ArrowLeft className="w-4 h-4" />
                     </button>
-                    <div className="flex items-center gap-1.5 truncate">
-                      <h4 className="font-bold text-white text-sm truncate">
-                        {formatPhone(selectedChat.phone)}
-                      </h4>
+                    <div className="flex items-center gap-2 truncate">
+                      <button
+                        type="button"
+                        onClick={() => handleOpenCustomerOrders(selectedChat.phone)}
+                        className="flex items-center gap-1.5 truncate hover:opacity-80 transition-opacity cursor-pointer group"
+                        title="Click to view Customer Orders"
+                      >
+                        <h4 className="font-bold text-white text-sm truncate group-hover:text-emerald-400 transition-colors">
+                          {selectedChat.customer_name ? `${selectedChat.customer_name} (${formatPhone(selectedChat.phone)})` : formatPhone(selectedChat.phone)}
+                        </h4>
+                        <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1 shrink-0 shadow-sm">
+                          🛍️ View Orders
+                        </span>
+                      </button>
                       <a
                         href={`tel:+${selectedChat.phone}`}
                         className="p-1 rounded-md bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white transition-all shrink-0"
@@ -639,23 +1162,78 @@ export default function WhatsAppAIDashboard() {
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    {/* Compact 24H countdown pill */}
-                    <span
-                      className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-bold border ${
-                        status24h.isOpen
-                          ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/30'
-                          : 'bg-amber-950/80 text-amber-300 border-amber-500/30'
-                      }`}
-                      title={status24h.text}
-                    >
-                      {status24h.isOpen ? (
-                        <Unlock className="w-3 h-3 text-emerald-400 shrink-0" />
-                      ) : (
-                        <Lock className="w-3 h-3 text-amber-400 shrink-0" />
+                  <div className="flex items-center gap-1.5 shrink-0 relative">
+                    {/* Clickable 24H Lock pill with popup */}
+                    <div className="relative">
+                      <button
+                        type="button"
+                        onClick={() => setShowLockInfo(v => !v)}
+                        className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-bold border cursor-pointer transition-all ${
+                          status24h.isOpen
+                            ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/40 hover:bg-emerald-900'
+                            : 'bg-rose-950/80 text-rose-300 border-rose-500/40 hover:bg-rose-900'
+                        }`}
+                        title="Click to see 24H window details"
+                      >
+                        {status24h.isOpen ? (
+                          <Unlock className="w-3 h-3 text-emerald-400 shrink-0" />
+                        ) : (
+                          <Lock className="w-3 h-3 text-rose-400 shrink-0" />
+                        )}
+                        <span>{status24h.isOpen ? '24H Open' : '24H Closed'}</span>
+                      </button>
+
+                      {/* Time-remaining popup */}
+                      {showLockInfo && (
+                        <div
+                          className="absolute top-8 right-0 z-50 w-64 bg-[#1a2733] border border-slate-700 rounded-xl shadow-2xl p-3 text-xs"
+                          onClick={e => e.stopPropagation()}
+                        >
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="font-bold text-white text-[11px] uppercase tracking-wider">24-Hour Window</span>
+                            <button onClick={() => setShowLockInfo(false)} className="text-slate-400 hover:text-white"><X className="w-3.5 h-3.5" /></button>
+                          </div>
+                          <div className={`flex items-start gap-2 p-2 rounded-lg ${status24h.isOpen ? 'bg-emerald-950/60 border border-emerald-500/20' : 'bg-rose-950/60 border border-rose-500/20'}`}>
+                            {status24h.isOpen ? (
+                              <Unlock className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                            ) : (
+                              <Lock className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                            )}
+                            <p className={`leading-relaxed ${status24h.isOpen ? 'text-emerald-200' : 'text-rose-200'}`}>
+                              {status24h.text}
+                            </p>
+                          </div>
+                          {!status24h.isOpen && (
+                            <p className="mt-2 text-slate-400 leading-relaxed">
+                              Window re-opens automatically when the customer sends a new message.
+                            </p>
+                          )}
+                        </div>
                       )}
-                      <span className="hidden sm:inline">{status24h.isOpen ? '24H Open' : 'Closed'}</span>
-                    </span>
+                    </div>{/* end relative wrapper */}
+
+                    {/* Mark Solved / Close Chat OR Reopen Chat toggle */}
+                    {selectedChat.chat_status === 'closed' ? (
+                      <button
+                        type="button"
+                        onClick={() => handleSetChatStatus(selectedChat, 'open')}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold border bg-emerald-950/80 text-emerald-300 border-emerald-500/40 hover:bg-emerald-900 transition-all cursor-pointer shadow-md"
+                        title="Re-open this chat into your active inbox"
+                      >
+                        <RefreshCw className="w-3 h-3 text-emerald-400" />
+                        <span>Reopen Chat</span>
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => handleSetChatStatus(selectedChat, 'closed')}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold border bg-amber-950/80 text-amber-300 border-amber-500/40 hover:bg-amber-900 transition-all cursor-pointer shadow-md"
+                        title="Mark customer query solved & close chat (removes from active open inbox)"
+                      >
+                        <CheckCircle2 className="w-3 h-3 text-amber-400" />
+                        <span>✓ Close Chat</span>
+                      </button>
+                    )}
 
                     {/* AI auto-reply toggle */}
                     <button
@@ -695,6 +1273,16 @@ export default function WhatsAppAIDashboard() {
                   ) : (
                     messages.map((msg, i) => {
                       const isAI = msg.role === 'assistant';
+                      // WhatsApp-style tick status for AI/manual messages
+                      const getMsgStatus = () => {
+                        if (msg._sending) return 'sending'; // clock icon, grey
+                        // Did any user message come AFTER this one?
+                        const userRepliedAfter = messages.slice(i + 1).some(m => m.role === 'user');
+                        if (userRepliedAfter) return 'read';        // 2 blue ticks
+                        if (i === messages.length - 1) return 'sent'; // 1 grey tick (newest)
+                        return 'delivered';                           // 2 grey ticks
+                      };
+                      const msgStatus = isAI ? getMsgStatus() : null;
                       return (
                         <div
                           key={msg.id || i}
@@ -705,7 +1293,7 @@ export default function WhatsAppAIDashboard() {
                               isAI
                                 ? 'bg-[#005c4b] text-[#e9edef] rounded-tr-none'
                                 : 'bg-[#202c33] text-[#e9edef] rounded-tl-none border border-[#2a3942]'
-                            }`}
+                            } ${msg._sending ? 'opacity-70' : ''}`}
                           >
                             <div className="flex items-center justify-between gap-4 mb-1">
                               <span className="text-[10px] font-bold opacity-75 uppercase text-emerald-300">
@@ -719,8 +1307,18 @@ export default function WhatsAppAIDashboard() {
                               <span className="text-[10px]">
                                 {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                               </span>
-                              {isAI && (
-                                <CheckCheck className="w-3.5 h-3.5 text-blue-400" title="Delivered & Read" />
+                              {/* WhatsApp-style ticks */}
+                              {msgStatus === 'sending' && (
+                                <Clock className="w-3 h-3 text-slate-400 animate-pulse" title="Sending..." />
+                              )}
+                              {msgStatus === 'sent' && (
+                                <Check className="w-3.5 h-3.5 text-slate-400" title="Sent" />
+                              )}
+                              {msgStatus === 'delivered' && (
+                                <CheckCheck className="w-3.5 h-3.5 text-slate-400" title="Delivered" />
+                              )}
+                              {msgStatus === 'read' && (
+                                <CheckCheck className="w-3.5 h-3.5 text-[#53bdeb]" title="Read" />
                               )}
                             </div>
                           </div>
@@ -762,7 +1360,7 @@ export default function WhatsAppAIDashboard() {
                 )}
 
                 {/* MANUAL REPLY SENDER BAR WITH DIRECT CAMERA & VOICE RECORDER */}
-                <form onSubmit={handleSendManualReply} className="p-4 border-t border-slate-800 bg-[#202c33] space-y-3">
+                <form onSubmit={handleSendManualReply} className="p-3 border-t border-slate-800 bg-[#202c33] space-y-2 shrink-0">
                   {/* MEDIA CONTROLS BAR (PHOTO & AUDIO RECORDER) */}
                   <div className="flex items-center justify-between flex-wrap gap-2">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -828,6 +1426,19 @@ export default function WhatsAppAIDashboard() {
                     </div>
                   </div>
 
+                  {/* LOCKED WINDOW OVERLAY — when 24h window is closed */}
+                  {!status24h.isOpen && !mediaPreviewBase64 && (
+                    <div className="mx-4 mb-3 rounded-xl bg-rose-950/60 border border-rose-500/50 shadow-lg flex items-center gap-3 px-4 py-3">
+                      <div className="w-10 h-10 rounded-full bg-rose-500/20 flex items-center justify-center shrink-0">
+                        <Lock className="w-5 h-5 text-rose-400" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm font-bold text-rose-300 tracking-wide uppercase">24-Hour Window Closed</p>
+                        <p className="text-[11px] text-rose-400/80 mt-0.5 leading-snug">Text & media replies are disabled by Meta. Wait for the customer to reply, or use a <span className="font-bold text-rose-300">Template</span> to re-engage.</p>
+                      </div>
+                    </div>
+                  )}
+
                   {/* INPUT FIELDS BASED ON TYPE */}
                   {replyType === 'template' ? (
                     <div className="flex items-center gap-3">
@@ -845,8 +1456,10 @@ export default function WhatsAppAIDashboard() {
                         disabled={sendingReply}
                         className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-bold flex items-center gap-2 shadow-lg shadow-emerald-600/20"
                       >
-                        <Send className="w-3.5 h-3.5" />
-                        {sendingReply ? 'Sending...' : 'Send Template'}
+                        {sendingReply
+                          ? <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          : <Send className="w-3.5 h-3.5" />}
+                        Send Template
                       </button>
                     </div>
                   ) : (
@@ -855,7 +1468,7 @@ export default function WhatsAppAIDashboard() {
                         type="text"
                         placeholder={
                           !status24h.isOpen
-                            ? '⚠️ Meta 24H Window closed — Use Template to reply.'
+                            ? '🔒 Locked — customer must message first to reopen'
                             : mediaPreviewType === 'image'
                             ? 'Photo caption (optional)...'
                             : mediaPreviewType === 'audio'
@@ -865,15 +1478,20 @@ export default function WhatsAppAIDashboard() {
                         value={replyText}
                         onChange={(e) => setReplyText(e.target.value)}
                         disabled={!status24h.isOpen && !mediaPreviewBase64}
-                        className="flex-1 bg-[#0b141a] border border-slate-700 rounded-xl px-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 disabled:opacity-50"
+                        className={`flex-1 bg-[#0b141a] border rounded-xl px-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none transition-colors ${
+                          !status24h.isOpen && !mediaPreviewBase64
+                            ? 'border-rose-700/50 opacity-50 cursor-not-allowed'
+                            : 'border-slate-700 focus:border-emerald-500'
+                        }`}
                       />
                       <button
                         type="submit"
                         disabled={sendingReply || (!status24h.isOpen && !mediaPreviewBase64 && replyType === 'text')}
                         className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-bold flex items-center gap-2 shadow-lg shadow-emerald-600/20 shrink-0"
                       >
-                        <Send className="w-4 h-4" />
-                        {sendingReply ? 'Sending...' : (mediaPreviewBase64 ? 'Send Media' : 'Send')}
+                        {sendingReply
+                          ? <RefreshCw className="w-4 h-4 animate-spin" />
+                          : <Send className="w-4 h-4" />}
                       </button>
                     </div>
                   )}
@@ -1039,6 +1657,506 @@ export default function WhatsAppAIDashboard() {
                   )}
                 </tbody>
               </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* TAB 3: AI INSTRUCTIONS & SYSTEM PROMPTS MANAGER            */}
+      {/* ========================================================= */}
+      {activeSubTab === 'instructions' && (
+        <div className="space-y-6">
+          <div className="bg-gradient-to-r from-emerald-950/80 to-slate-900/80 border border-emerald-500/30 rounded-2xl p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-2xl bg-emerald-500/20 flex items-center justify-center text-emerald-400">
+                <Bot className="w-6 h-6" />
+              </div>
+              <div>
+                <h4 className="text-base font-bold text-white flex items-center gap-2">
+                  AI Instructions & System Prompts Panel
+                  <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                    Live Engine
+                  </span>
+                </h4>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Manage & edit how your 11FIT AI Stylist & Sales Assistant behaves on WhatsApp in real-time.
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={handleSaveInstructions}
+              disabled={savingInst}
+              className="bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 disabled:opacity-50 text-white font-bold py-2.5 px-5 rounded-xl flex items-center gap-2 text-sm shadow-lg shadow-emerald-600/30 transition-all cursor-pointer"
+            >
+              {savingInst ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+              <span>{savingInst ? 'Saving...' : 'Save AI Instructions'}</span>
+            </button>
+          </div>
+
+          {/* Sub-tabs for diffrent tabs / points */}
+          <div className="flex items-center gap-2 border-b border-slate-800 pb-2 overflow-x-auto">
+            <button
+              onClick={() => setInstCategoryTab('language')}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap ${
+                instCategoryTab === 'language'
+                  ? 'bg-emerald-600/20 text-emerald-400 border border-emerald-500/40'
+                  : 'bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800'
+              }`}
+            >
+              🗣️ Tone & Language
+            </button>
+            <button
+              onClick={() => setInstCategoryTab('security')}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap ${
+                instCategoryTab === 'security'
+                  ? 'bg-emerald-600/20 text-emerald-400 border border-emerald-500/40'
+                  : 'bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800'
+              }`}
+            >
+              🚨 Order & Security Rules
+            </button>
+            <button
+              onClick={() => setInstCategoryTab('size')}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap ${
+                instCategoryTab === 'size'
+                  ? 'bg-emerald-600/20 text-emerald-400 border border-emerald-500/40'
+                  : 'bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800'
+              }`}
+            >
+              📏 Size & Fit Advisor
+            </button>
+            <button
+              onClick={() => setInstCategoryTab('brand')}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap ${
+                instCategoryTab === 'brand'
+                  ? 'bg-emerald-600/20 text-emerald-400 border border-emerald-500/40'
+                  : 'bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800'
+              }`}
+            >
+              🏆 Brand & Policies
+            </button>
+            <button
+              onClick={() => setInstCategoryTab('custom')}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap ${
+                instCategoryTab === 'custom'
+                  ? 'bg-emerald-600/20 text-emerald-400 border border-emerald-500/40'
+                  : 'bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800'
+              }`}
+            >
+              ⭐ Custom Rules
+            </button>
+          </div>
+
+          <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 space-y-4">
+            {instCategoryTab === 'language' && (
+              <div>
+                <label className="block text-sm font-bold text-white mb-1.5 flex items-center justify-between">
+                  <span>🗣️ Dynamic Tone & Automatic Language Mirroring Instructions</span>
+                  <span className="text-xs text-slate-400 font-normal">Controls language switching & short reply rules</span>
+                </label>
+                <textarea
+                  value={instLanguage}
+                  onChange={(e) => setInstLanguage(e.target.value)}
+                  rows={8}
+                  placeholder="Enter tone and language rules..."
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-sm text-slate-200 font-mono focus:outline-none focus:border-emerald-500 transition-colors leading-relaxed"
+                />
+              </div>
+            )}
+
+            {instCategoryTab === 'security' && (
+              <div>
+                <label className="block text-sm font-bold text-white mb-1.5 flex items-center justify-between">
+                  <span>🚨 Order Security & 10-Digit Mobile Verification Flow</span>
+                  <span className="text-xs text-slate-400 font-normal">Controls order # matching & OTP/10-digit mobile check</span>
+                </label>
+                <textarea
+                  value={instOrderSecurity}
+                  onChange={(e) => setInstOrderSecurity(e.target.value)}
+                  rows={10}
+                  placeholder="Enter order security rules..."
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-sm text-slate-200 font-mono focus:outline-none focus:border-emerald-500 transition-colors leading-relaxed"
+                />
+              </div>
+            )}
+
+            {instCategoryTab === 'size' && (
+              <div>
+                <label className="block text-sm font-bold text-white mb-1.5 flex items-center justify-between">
+                  <span>📏 11FIT AI Size & Fit Advisor Rules</span>
+                  <span className="text-xs text-slate-400 font-normal">Controls streetwear oversized cut & stretch sizing rules</span>
+                </label>
+                <textarea
+                  value={instSizeAdvisor}
+                  onChange={(e) => setInstSizeAdvisor(e.target.value)}
+                  rows={7}
+                  placeholder="Enter size & fit advisor rules..."
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-sm text-slate-200 font-mono focus:outline-none focus:border-emerald-500 transition-colors leading-relaxed"
+                />
+              </div>
+            )}
+
+            {instCategoryTab === 'brand' && (
+              <div>
+                <label className="block text-sm font-bold text-white mb-1.5 flex items-center justify-between">
+                  <span>🏆 11FIT Brand Information & Policies</span>
+                  <span className="text-xs text-slate-400 font-normal">Controls delivery days, return policies & support email</span>
+                </label>
+                <textarea
+                  value={instBrandPolicies}
+                  onChange={(e) => setInstBrandPolicies(e.target.value)}
+                  rows={6}
+                  placeholder="Enter brand & policy info..."
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-sm text-slate-200 font-mono focus:outline-none focus:border-emerald-500 transition-colors leading-relaxed"
+                />
+              </div>
+            )}
+
+            {instCategoryTab === 'custom' && (
+              <div>
+                <label className="block text-sm font-bold text-white mb-1.5 flex items-center justify-between">
+                  <span>⭐ Custom AI Instructions & Seasonal Offer Rules</span>
+                  <span className="text-xs text-slate-400 font-normal">Add any custom rules or seasonal instructions here</span>
+                </label>
+                <textarea
+                  value={instCustom}
+                  onChange={(e) => setInstCustom(e.target.value)}
+                  rows={6}
+                  placeholder="e.g. For Rakhi festival, recommend Pack of 2 Combos first! Or always wish good morning..."
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-sm text-slate-200 font-mono focus:outline-none focus:border-emerald-500 transition-colors leading-relaxed"
+                />
+              </div>
+            )}
+
+            <div className="flex items-center justify-between pt-3 border-t border-slate-800/80">
+              <span className="text-xs text-slate-400">
+                💡 Tip: Changes saved here are dynamically injected into the real-time AI prompt on every WhatsApp incoming message.
+              </span>
+              <button
+                type="button"
+                onClick={handleSaveInstructions}
+                disabled={savingInst}
+                className="bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 disabled:opacity-50 text-white font-bold py-2 px-4 rounded-xl flex items-center gap-2 text-xs shadow-md transition-all cursor-pointer"
+              >
+                {savingInst ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                <span>Save Current Instructions</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CUSTOMER ORDERS MODAL / DRAWER */}
+      {showOrdersModal && (
+        <div
+          className="fixed inset-0 z-[200] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-[fadeIn_0.2s_ease]"
+          onClick={() => setShowOrdersModal(false)}
+        >
+          <div
+            className="bg-[#0f172a] border border-slate-800 rounded-3xl w-full max-w-2xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="p-4 px-6 border-b border-slate-800 bg-[#1e293b]/50 flex items-center justify-between gap-3 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
+                  <ShoppingBag className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-white text-base flex items-center gap-2">
+                    <span>Customer Orders — {formatPhone(ordersCustomerPhone)}</span>
+                    {!ordersLoading && (
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                        {customerOrders.length} {customerOrders.length === 1 ? 'Order' : 'Orders'}
+                      </span>
+                    )}
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Showing Shopify orders placed on website (Newest First)
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleOpenCustomerOrders(ordersCustomerPhone)}
+                  disabled={ordersLoading}
+                  className="px-3 py-1.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+                  title="Refresh Live from Shopify"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${ordersLoading ? 'animate-spin' : ''}`} />
+                  Sync Live
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowOrdersModal(false)}
+                  className="p-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors cursor-pointer"
+                  title="Close"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-5 overflow-y-auto space-y-4 flex-1">
+              {ordersLoading ? (
+                <div className="flex flex-col items-center justify-center py-16 gap-3">
+                  <RefreshCw className="w-8 h-8 text-emerald-400 animate-spin" />
+                  <p className="text-sm font-semibold text-slate-300">Fetching customer orders from Shopify...</p>
+                </div>
+              ) : customerOrders.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16 gap-3 text-center">
+                  <div className="w-14 h-14 rounded-full bg-slate-800/50 flex items-center justify-center text-slate-500">
+                    <Package className="w-7 h-7" />
+                  </div>
+                  <h4 className="text-base font-bold text-white">No Orders Found</h4>
+                  <p className="text-xs text-slate-400 max-w-sm">
+                    No orders matching phone number <span className="text-emerald-400 font-mono">{formatPhone(ordersCustomerPhone)}</span> were found on your Shopify store.
+                  </p>
+                </div>
+              ) : (
+                customerOrders.map((order) => {
+                  const isExpanded = expandedOrderId === order.id;
+                  const fulfillment = (order.fulfillments && order.fulfillments.length > 0) ? order.fulfillments[0] : null;
+                  const trackingNumber = fulfillment?.tracking_number || null;
+                  const trackingUrl = fulfillment?.tracking_url || (fulfillment?.tracking_urls && fulfillment.tracking_urls[0]) || null;
+                  const trackingCompany = fulfillment?.tracking_company || null;
+                  const isFulfilled = order.fulfillment_status === 'fulfilled' || trackingNumber;
+                  const isCancelled = !!order.cancelled_at;
+
+                  return (
+                    <div
+                      key={order.id}
+                      className="bg-[#1e293b]/60 border border-slate-700/70 rounded-2xl overflow-hidden transition-all shadow-md hover:border-slate-600"
+                    >
+                      {/* Order Card Top Bar */}
+                      <div
+                        className="p-4 flex items-center justify-between gap-3 cursor-pointer select-none hover:bg-slate-800/40 transition-colors"
+                        onClick={() => setExpandedOrderId(isExpanded ? null : order.id)}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="flex flex-col">
+                            <span className="font-bold text-white text-base">
+                              {order.name || `#${order.order_number}`}
+                            </span>
+                            <span className="text-xs text-slate-400">
+                              {new Date(order.created_at).toLocaleString([], {
+                                day: 'numeric',
+                                month: 'short',
+                                year: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit'
+                              })}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-3">
+                          <div className="text-right">
+                            <span className="font-bold text-emerald-400 text-base">
+                              ₹{order.total_price || 0}
+                            </span>
+                            <div className="flex items-center justify-end gap-1 mt-0.5">
+                              {order.financial_status === 'paid' ? (
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                                  💳 Paid
+                                </span>
+                              ) : order.financial_status === 'partially_paid' ? (
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-yellow-500/20 text-yellow-300 border border-yellow-500/30">
+                                  🪙 Partial COD
+                                </span>
+                              ) : (
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-500/20 text-blue-300 border border-blue-500/30">
+                                  💵 COD
+                                </span>
+                              )}
+                              {isCancelled ? (
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                                  ❌ Cancelled
+                                </span>
+                              ) : isFulfilled ? (
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                                  🚚 Fulfilled
+                                </span>
+                              ) : (
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                                  ⏳ Unfulfilled / Processing
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="p-1 rounded-lg bg-slate-800 text-slate-400">
+                            {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Expanded Section: Address, Items & Tracking */}
+                      {isExpanded && (
+                        <div className="px-4 pb-4 pt-1 border-t border-slate-700/50 space-y-4 bg-slate-900/30 text-xs">
+                          {/* 1. Shipping Address */}
+                          <div>
+                            <h5 className="font-bold text-slate-300 mb-1.5 flex items-center gap-1.5 text-xs uppercase tracking-wider">
+                              <MapPin className="w-3.5 h-3.5 text-emerald-400" />
+                              <span>Shipping Address</span>
+                            </h5>
+                            {order.shipping_address ? (
+                              <div className="bg-slate-950/60 rounded-xl p-3 border border-slate-800/80 space-y-1 text-slate-300">
+                                <p className="font-bold text-white">
+                                  {order.shipping_address.first_name || ''} {order.shipping_address.last_name || ''}
+                                </p>
+                                <p>
+                                  {[
+                                    order.shipping_address.address1,
+                                    order.shipping_address.address2,
+                                    order.shipping_address.city,
+                                    order.shipping_address.province,
+                                    order.shipping_address.zip
+                                  ].filter(Boolean).join(', ')}
+                                </p>
+                                {order.shipping_address.phone && (
+                                  <p className="text-slate-400">Phone: {formatPhone(order.shipping_address.phone)}</p>
+                                )}
+                              </div>
+                            ) : (
+                              <p className="text-slate-500 italic">No shipping address provided</p>
+                            )}
+                          </div>
+
+                          {/* 1.5. Payment Details & Status */}
+                          <div>
+                            <h5 className="font-bold text-slate-300 mb-1.5 flex items-center gap-1.5 text-xs uppercase tracking-wider">
+                              <DollarSign className="w-3.5 h-3.5 text-emerald-400" />
+                              <span>Payment Details</span>
+                            </h5>
+                            <div className="bg-slate-950/60 rounded-xl p-3 border border-slate-800/80 flex items-center justify-between">
+                              <div>
+                                <span className="text-slate-400 block text-[11px] mb-0.5">Method & Status</span>
+                                <span className="font-bold text-white text-sm">
+                                  {order.financial_status === 'paid'
+                                    ? '💳 Paid Online (Prepaid)'
+                                    : order.financial_status === 'partially_paid'
+                                    ? `🪙 Partial Paid (Advance Paid | Balance ₹${order.total_price} on COD)`
+                                    : `💵 Cash on Delivery (COD) — Pay ₹${order.total_price} on Delivery`}
+                                </span>
+                              </div>
+                              <div className="text-right">
+                                <span className="text-slate-400 block text-[11px] mb-0.5">Total Amount</span>
+                                <span className="font-extrabold text-emerald-400 text-base">
+                                  ₹{order.total_price || 0}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* 2. Items Ordered */}
+                          <div>
+                            <h5 className="font-bold text-slate-300 mb-1.5 flex items-center gap-1.5 text-xs uppercase tracking-wider">
+                              <ShoppingBag className="w-3.5 h-3.5 text-emerald-400" />
+                              <span>Items Ordered ({(order.line_items || []).length})</span>
+                            </h5>
+                            <div className="bg-slate-950/60 rounded-xl p-3 border border-slate-800/80 space-y-2">
+                              {(order.line_items || []).map((item, i) => (
+                                <div key={i} className="flex items-center justify-between gap-2 text-slate-300">
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <span className="w-6 h-6 rounded-md bg-emerald-500/10 text-emerald-400 font-bold flex items-center justify-center text-xs shrink-0">
+                                      {item.quantity}x
+                                    </span>
+                                    <span className="truncate text-white font-medium">
+                                      {item.title}
+                                      {item.variant_title && (
+                                        <span className="text-slate-400 font-normal ml-1">({item.variant_title})</span>
+                                      )}
+                                    </span>
+                                  </div>
+                                  <span className="font-semibold text-emerald-400 shrink-0">
+                                    ₹{item.price}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* 3. Tracking Info (if available) */}
+                          {isFulfilled && (
+                            <div>
+                              <h5 className="font-bold text-slate-300 mb-1.5 flex items-center gap-1.5 text-xs uppercase tracking-wider">
+                                <Truck className="w-3.5 h-3.5 text-blue-400" />
+                                <span>Tracking Information</span>
+                              </h5>
+                              <div className="bg-slate-950/60 rounded-xl p-3 border border-slate-800/80 flex items-center justify-between gap-3 flex-wrap">
+                                <div>
+                                  <span className="text-slate-400">Courier: </span>
+                                  <span className="font-semibold text-white">{trackingCompany || 'Assigned'}</span>
+                                  {trackingNumber && (
+                                    <>
+                                      <span className="text-slate-600 mx-2">|</span>
+                                      <span className="text-slate-400">AWB: </span>
+                                      <span className="font-mono font-bold text-emerald-400">{trackingNumber}</span>
+                                    </>
+                                  )}
+                                </div>
+                                {trackingUrl && (
+                                  <a
+                                    href={trackingUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 font-bold underline"
+                                  >
+                                    <span>Track Link</span>
+                                    <ExternalLink className="w-3 h-3" />
+                                  </a>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Order Card Footer — 2 Direct WhatsApp Send Buttons */}
+                      <div className="p-3 bg-slate-900/60 border-t border-slate-700/60 flex items-center justify-end gap-2 flex-wrap">
+                        {/* Button 1: Send Order Details */}
+                        <button
+                          type="button"
+                          disabled={!!sendingOrderAction}
+                          onClick={() => handleSendOrderWhatsApp(order, 'details')}
+                          className="bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 disabled:opacity-50 text-white font-bold py-2 px-3.5 rounded-xl flex items-center gap-1.5 text-xs shadow-md transition-all cursor-pointer"
+                        >
+                          {sendingOrderAction === `${order.id}-details` ? (
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <Send className="w-3.5 h-3.5" />
+                          )}
+                          <span>Send Order Details</span>
+                        </button>
+
+                        {/* Button 2: Send Shipping Info */}
+                        <button
+                          type="button"
+                          disabled={!!sendingOrderAction || !trackingNumber}
+                          onClick={() => handleSendOrderWhatsApp(order, 'shipping')}
+                          title={!trackingNumber ? 'No tracking number assigned to this order yet' : 'Send tracking info & link to WhatsApp'}
+                          className={`font-bold py-2 px-3.5 rounded-xl flex items-center gap-1.5 text-xs shadow-md transition-all ${
+                            trackingNumber
+                              ? 'bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white cursor-pointer'
+                              : 'bg-slate-800 text-slate-500 opacity-60 cursor-not-allowed'
+                          }`}
+                        >
+                          {sendingOrderAction === `${order.id}-shipping` ? (
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <Truck className="w-3.5 h-3.5" />
+                          )}
+                          <span>Send Shipping Info</span>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
             </div>
           </div>
         </div>

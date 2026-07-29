@@ -1,0 +1,18 @@
+{
+  "short_name": "11FIT AI",
+  "name": "11FIT WhatsApp AI & Command Center",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "type": "image/svg+xml",
+      "sizes": "192x192 512x512"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#020617",
+  "theme_color": "#10b981",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "scope": "/",
+  "description": "11FIT Live WhatsApp AI Sales Assistant, Security Verification & Mobile Command Center"
+}

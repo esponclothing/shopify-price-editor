@@ -24,19 +24,40 @@ export default async function handler(req, res) {
       );
       const rows = memRes.data || [];
 
-      // Fetch AI settings for all phones
+      // Fetch AI settings & customer names for all phones
       let settingsMap = {};
       try {
         const setRes = await axios.get(
-          `${SUPABASE_URL}/rest/v1/whatsapp_chat_settings?select=phone,ai_paused`,
+          `${SUPABASE_URL}/rest/v1/whatsapp_chat_settings?select=phone,ai_paused,customer_name,chat_status`,
           { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } }
         );
         (setRes.data || []).forEach(s => {
-          settingsMap[s.phone] = s.ai_paused || false;
+          settingsMap[s.phone] = {
+            ai_paused: s.ai_paused || false,
+            customer_name: s.customer_name || '',
+            chat_status: s.chat_status || 'open'
+          };
         });
       } catch (_) {
-        // table might not exist yet, default false
+        // table might not exist yet
       }
+
+      // Also check customer names from shopify_orders table for fast local name resolution
+      let ordersNameMap = {};
+      try {
+        const ordRes = await axios.get(
+          `${SUPABASE_URL}/rest/v1/shopify_orders?select=phone_last10,order_data&phone_last10=not.is.null&order=created_at.desc&limit=500`,
+          { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } }
+        );
+        (ordRes.data || []).forEach(o => {
+          const p = o.phone_last10;
+          if (p && !ordersNameMap[p]) {
+            const sh = o.order_data?.shipping_address || o.order_data?.customer || {};
+            const name = [sh.first_name, sh.last_name].filter(Boolean).join(' ');
+            if (name) ordersNameMap[p] = name;
+          }
+        });
+      } catch (_) {}
 
       // Group by phone
       const chatsMap = {};
@@ -44,14 +65,20 @@ export default async function handler(req, res) {
         if (!chatsMap[r.phone]) {
           const lastMsgTime = new Date(r.created_at).getTime();
           const hoursElapsed = (Date.now() - lastMsgTime) / (1000 * 3600);
+          const settings = settingsMap[r.phone] || {};
+          const cleanP = String(r.phone).replace(/\D/g, '').slice(-10);
+          const resolvedName = settings.customer_name || ordersNameMap[cleanP] || '';
+
           chatsMap[r.phone] = {
             phone: r.phone,
+            customer_name: resolvedName,
             last_message: r.content,
             last_role: r.role,
             created_at: r.created_at,
             is_within_24h: hoursElapsed <= 24,
             hours_elapsed: Math.round(hoursElapsed * 10) / 10,
-            ai_paused: settingsMap[r.phone] || false,
+            ai_paused: settings.ai_paused || false,
+            chat_status: settings.chat_status || 'open',
             message_count: 1
           };
         } else {
@@ -156,6 +183,29 @@ export default async function handler(req, res) {
       }
     }
 
+    // 3A-2. Toggle Chat Open/Closed Status
+    if (postAction === 'set_status') {
+      const { chat_status } = req.body;
+      try {
+        await axios.post(
+          `${SUPABASE_URL}/rest/v1/whatsapp_chat_settings`,
+          { phone, chat_status: chat_status || 'open', updated_at: new Date().toISOString() },
+          {
+            headers: {
+              'apikey': SUPABASE_KEY,
+              'Authorization': `Bearer ${SUPABASE_KEY}`,
+              'Content-Type': 'application/json',
+              'Prefer': 'resolution=merge-duplicates'
+            }
+          }
+        );
+        return res.status(200).json({ success: true, phone, chat_status: chat_status || 'open' });
+      } catch (err) {
+        console.error('Failed to update chat status:', err.response?.data || err.message);
+        return res.status(500).json({ error: 'Failed to update chat status' });
+      }
+    }
+
     // 3B. Send Manual Message via WhatsApp Graph API
     if (postAction === 'send_message') {
       let token = process.env.WHATSAPP_TOKEN;
@@ -223,6 +273,18 @@ export default async function handler(req, res) {
                 'apikey': SUPABASE_KEY,
                 'Authorization': `Bearer ${SUPABASE_KEY}`,
                 'Content-Type': 'application/json'
+              }
+            }
+          );
+          await axios.post(
+            `${SUPABASE_URL}/rest/v1/whatsapp_chat_settings`,
+            { phone, chat_status: 'open', updated_at: new Date().toISOString() },
+            {
+              headers: {
+                'apikey': SUPABASE_KEY,
+                'Authorization': `Bearer ${SUPABASE_KEY}`,
+                'Content-Type': 'application/json',
+                'Prefer': 'resolution=merge-duplicates'
               }
             }
           );
@@ -317,6 +379,18 @@ export default async function handler(req, res) {
             `${SUPABASE_URL}/rest/v1/whatsapp_chat_memory`,
             { phone, role: 'assistant', content: displayContent },
             { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json' } }
+          );
+          await axios.post(
+            `${SUPABASE_URL}/rest/v1/whatsapp_chat_settings`,
+            { phone, chat_status: 'open', updated_at: new Date().toISOString() },
+            {
+              headers: {
+                'apikey': SUPABASE_KEY,
+                'Authorization': `Bearer ${SUPABASE_KEY}`,
+                'Content-Type': 'application/json',
+                'Prefer': 'resolution=merge-duplicates'
+              }
+            }
           );
         } catch (_) {}
 

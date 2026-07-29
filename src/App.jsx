@@ -618,7 +618,7 @@ export default function App() {
           </div>
         )}
 
-        <main className="flex-1 p-4 md:p-8 overflow-y-auto max-w-7xl w-full mx-auto font-sans">
+        <main className={`flex-1 w-full mx-auto font-sans ${activeTab === 'whatsapp-ai' ? 'p-0 max-w-none overflow-hidden flex flex-col' : 'p-4 md:p-8 overflow-y-auto max-w-7xl'}`}>
           {error && (
             <div className="mb-6 p-4 bg-red-950/40 border border-red-800/60 rounded-2xl flex items-center gap-3 text-red-400 shadow-md">
               <AlertCircle className="w-5 h-5 shrink-0" />
@@ -6422,6 +6422,19 @@ function ComboCreatorDashboard({ products }) {
         }
       });
 
+      // 4. Save combo offer to Supabase DB shopify_combos table
+      axios.post('/api/shopify-combos', {
+        product_id: rawProductId,
+        product_title: product.title,
+        product_handle: product.handle || '',
+        combo_count: parseInt(comboCount),
+        combo_price: parseFloat(comboPrice),
+        discount_code: codeName,
+        price_rule_id: priceRuleId,
+        price_rule_title: `COMBO_PR_${rawProductId}_${comboCount}`,
+        is_active: true
+      }).catch(err => console.warn('DB Combo Save Warning:', err));
+
       // Optimistic update of local rules list
       const newRule = priceRuleRes.data.price_rule;
       setActiveRules(prev => [newRule, ...prev.filter(r => r.id !== newRule.id)]);
@@ -6459,6 +6472,8 @@ function ComboCreatorDashboard({ products }) {
           }
         });
       }
+
+      axios.delete(`/api/shopify-combos?price_rule_id=${rule.id}`).catch(() => {});
 
       setSuccess("Successfully deleted combo discount.");
       setTimeout(fetchActiveComboRules, 3000);
