@@ -3,31 +3,40 @@ import https from 'https';
 import pg from 'pg';
 const { Client } = pg;
 
-const NFU_DB_URL =
-  process.env.SUPABASE_NFU_DB_URL ||
-  'postgres://postgres:11fit@202612@db.nfubnpgfwgrlpfhcbjlg.supabase.co:5432/postgres';
-
 async function fetchNFUData() {
-  const client = new Client({
-    connectionString: NFU_DB_URL,
-    ssl: { rejectUnauthorized: false }
-  });
+  const urls = [
+    process.env.SUPABASE_NFU_DB_URL || 'postgres://postgres:11fit@202612@db.nfubnpgfwgrlpfhcbjlg.supabase.co:6543/postgres',
+    'postgres://postgres:11fit@202612@db.nfubnpgfwgrlpfhcbjlg.supabase.co:5432/postgres'
+  ];
   let otpLogs = [];
   let networkUsers = [];
-  try {
-    await client.connect();
-    const [resOtp, resUsers] = await Promise.all([
-      client.query('SELECT * FROM otp_logs ORDER BY created_at DESC LIMIT 1000'),
-      client.query('SELECT * FROM network_users ORDER BY created_at DESC LIMIT 1000')
-    ]);
-    otpLogs = resOtp.rows || [];
-    networkUsers = resUsers.rows || [];
-    await client.end();
-  } catch (err) {
-    console.warn('Error fetching from NFU Postgres DB:', err.message);
-    try { await client.end(); } catch (_) {}
+  let errorMsg = null;
+
+  for (const url of urls) {
+    const client = new Client({
+      connectionString: url,
+      ssl: { rejectUnauthorized: false },
+      connectionTimeoutMillis: 7000
+    });
+    try {
+      await client.connect();
+      const [resOtp, resUsers] = await Promise.all([
+        client.query('SELECT * FROM otp_logs ORDER BY created_at DESC LIMIT 1000'),
+        client.query('SELECT * FROM network_users ORDER BY created_at DESC LIMIT 1000')
+      ]);
+      otpLogs = resOtp.rows || [];
+      networkUsers = resUsers.rows || [];
+      errorMsg = null;
+      await client.end();
+      break; // Connected and fetched successfully!
+    } catch (err) {
+      errorMsg = err.message;
+      console.warn(`Failed to connect to ${url}: ${err.message}`);
+      try { await client.end(); } catch (_) {}
+    }
   }
-  return { otpLogs, networkUsers };
+
+  return { otpLogs, networkUsers, errorMsg };
 }
 
 const get10Digit = (ph) => {
@@ -60,7 +69,7 @@ export default async function handler(req, res) {
     // -------------------------------------------------------------
     // A. FETCH OTP LOGS & NETWORK USERS FROM 11FIT POSTGRES DB (NFU)
     // -------------------------------------------------------------
-    const { otpLogs, networkUsers } = await fetchNFUData();
+    const { otpLogs, networkUsers, errorMsg } = await fetchNFUData();
 
     // -------------------------------------------------------------
     // B. FETCH ABANDONED CHECKOUTS FROM SHOPIFY
@@ -212,7 +221,8 @@ export default async function handler(req, res) {
       },
       abandonedCarts,
       otpLogs: formattedOtpLogs,
-      networkUsers: Array.isArray(networkUsers) ? networkUsers : []
+      networkUsers: Array.isArray(networkUsers) ? networkUsers : [],
+      _debug_error: errorMsg || null
     });
   } catch (error) {
     console.error('11FIT Analytics API Error:', error);
