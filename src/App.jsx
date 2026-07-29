@@ -5,6 +5,7 @@ import AltImage from './components/AltImage';
 import AutomatedCampaignsDashboard from './components/AutomatedCampaignsDashboard';
 import HomepageManagerDashboard from './components/HomepageManagerDashboard';
 import WhatsAppAIDashboard from './components/WhatsAppAIDashboard';
+import CustomerOrderLookup from './components/CustomerOrderLookup';
 import {
   Settings, Save, AlertCircle, Package, Search, X, Edit, Tags,
   Image as ImageIcon, Database, Info, ShoppingCart, Phone, Mail,
@@ -413,7 +414,12 @@ export default function App() {
           >
             <Zap className="w-4 h-4 text-emerald-400" /> WhatsApp AI Logs
           </button>
-
+          <button
+            onClick={() => setActiveTab('customer-lookup')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all duration-200 ${activeTab === 'customer-lookup' ? 'bg-gradient-to-r from-emerald-500/10 to-teal-500/5 text-emerald-400 border border-emerald-500/20' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200 border border-transparent'}`}
+          >
+            <Phone className="w-4 h-4 text-emerald-400" /> Phone Order Lookup
+          </button>
         </nav>
 
         <div className="p-4 border-t border-slate-800 bg-[#151D30] space-y-3">
@@ -520,6 +526,18 @@ export default function App() {
               >
                 <LayoutDashboard className="w-4 h-4" /> Homepage Manager
               </button>
+              <button
+                onClick={() => { setActiveTab('whatsapp-ai'); setMobileMenuOpen(false); }}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold ${activeTab === 'whatsapp-ai' ? 'bg-emerald-500/10 text-emerald-400' : 'text-slate-400'}`}
+              >
+                <Zap className="w-4 h-4 text-emerald-400" /> WhatsApp AI Logs
+              </button>
+              <button
+                onClick={() => { setActiveTab('customer-lookup'); setMobileMenuOpen(false); }}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold ${activeTab === 'customer-lookup' ? 'bg-emerald-500/10 text-emerald-400' : 'text-slate-400'}`}
+              >
+                <Phone className="w-4 h-4 text-emerald-400" /> Phone Order Lookup
+              </button>
             </nav>
           </aside>
         </div>
@@ -578,6 +596,7 @@ export default function App() {
             ) : (
               <h2 className="text-base md:text-lg font-bold text-white tracking-wide truncate">
                 {activeTab === 'whatsapp-ai' && '⚡ WhatsApp AI Logs'}
+                {activeTab === 'customer-lookup' && '📞 Phone Order Lookup'}
                 {activeTab === 'subcategories' && '📁 Subcategories'}
                 {activeTab === 'delivery' && '🚚 Delivery Pipeline'}
                 {activeTab === 'bulk' && '📊 Bulk Price Editor'}
@@ -738,6 +757,8 @@ export default function App() {
             <HomepageManagerDashboard products={products} collections={collections} mainThemeId={mainThemeId} />
           ) : activeTab === 'whatsapp-ai' ? (
             <WhatsAppAIDashboard />
+          ) : activeTab === 'customer-lookup' ? (
+            <CustomerOrderLookup onOpenWhatsApp={(phone) => setActiveTab('whatsapp-ai')} />
           ) : activeTab === 'combo-creator' ? (
             <ComboCreatorDashboard products={products} />
           ) : (

@@ -139,7 +139,21 @@ export default async function handler(req, res) {
       if (dbRes.ok) {
         const rows = await dbRes.json();
         if (rows && rows.length > 0) {
-          const orders = rows.map(r => r.order_data || r);
+          const orders = rows.map(r => {
+            let data = r.order_data;
+            if (typeof data === 'string') {
+              try { data = JSON.parse(data); } catch (_) {}
+            }
+            if (data && typeof data === 'object') {
+              data.id = data.id || r.id;
+              data.created_at = data.created_at || r.created_at;
+              data.name = data.name || r.name || (r.order_number ? `#${r.order_number}` : '#Order');
+              data.order_number = data.order_number || r.order_number;
+              data.total_price = data.total_price || r.total_price || 0;
+              return data;
+            }
+            return r;
+          });
           return res.status(200).json({ orders, source: 'database_fallback' });
         }
       }

@@ -42,20 +42,53 @@ export default async function handler(req, res) {
         // table might not exist yet
       }
 
-      // Also check customer names from shopify_orders table for fast local name resolution
-      let ordersNameMap = {};
+      // Build orders info map from shopify_orders table
+      let ordersInfoMap = {};
       try {
         const ordRes = await axios.get(
-          `${SUPABASE_URL}/rest/v1/shopify_orders?select=phone_last10,order_data&phone_last10=not.is.null&order=created_at.desc&limit=500`,
+          `${SUPABASE_URL}/rest/v1/shopify_orders?select=phone_last10,alt_phone_last10,fulfillment_status,cancelled_at,order_data&phone_last10=not.is.null&order=created_at.desc&limit=500`,
           { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } }
         );
         (ordRes.data || []).forEach(o => {
-          const p = o.phone_last10;
-          if (p && !ordersNameMap[p]) {
+          const phones = [o.phone_last10, o.alt_phone_last10].filter(Boolean);
+          phones.forEach(p => {
+            const cleanP = String(p).replace(/\D/g, '').slice(-10);
+            if (!cleanP) return;
+
+            // Resolve name
             const sh = o.order_data?.shipping_address || o.order_data?.customer || {};
             const name = [sh.first_name, sh.last_name].filter(Boolean).join(' ');
-            if (name) ordersNameMap[p] = name;
-          }
+
+            // Determine order shipment status
+            let shipmentStatus = 'unfulfilled';
+            if (o.cancelled_at || o.order_data?.cancelled_at) {
+              shipmentStatus = 'cancelled';
+            } else {
+              const f = o.order_data?.fulfillments?.[0] || {};
+              const s = (f.shipment_status || o.fulfillment_status || '').toLowerCase();
+              if (s.includes('deliver') && !s.includes('out_for_delivery')) {
+                shipmentStatus = 'delivered';
+              } else if (s.includes('out_for_delivery') || s.includes('out for delivery')) {
+                shipmentStatus = 'out_for_delivery';
+              } else if (s.includes('transit') || s === 'fulfilled' || s === 'confirmed' || s.includes('pickup') || s.includes('ready')) {
+                shipmentStatus = 'in_transit';
+              }
+            }
+
+            if (!ordersInfoMap[cleanP]) {
+              ordersInfoMap[cleanP] = {
+                name: name || '',
+                has_order: true,
+                order_count: 1,
+                order_status: shipmentStatus
+              };
+            } else {
+              ordersInfoMap[cleanP].order_count += 1;
+              if (!ordersInfoMap[cleanP].name && name) {
+                ordersInfoMap[cleanP].name = name;
+              }
+            }
+          });
         });
       } catch (_) {}
 
@@ -67,7 +100,8 @@ export default async function handler(req, res) {
           const hoursElapsed = (Date.now() - lastMsgTime) / (1000 * 3600);
           const settings = settingsMap[r.phone] || {};
           const cleanP = String(r.phone).replace(/\D/g, '').slice(-10);
-          const resolvedName = settings.customer_name || ordersNameMap[cleanP] || '';
+          const orderInfo = ordersInfoMap[cleanP] || { has_order: false, order_count: 0, order_status: 'no_order' };
+          const resolvedName = settings.customer_name || orderInfo.name || '';
 
           chatsMap[r.phone] = {
             phone: r.phone,
@@ -79,6 +113,9 @@ export default async function handler(req, res) {
             hours_elapsed: Math.round(hoursElapsed * 10) / 10,
             ai_paused: settings.ai_paused || false,
             chat_status: settings.chat_status || 'open',
+            has_order: orderInfo.has_order,
+            order_count: orderInfo.order_count,
+            order_status: orderInfo.order_status,
             message_count: 1
           };
         } else {
@@ -152,6 +189,41 @@ export default async function handler(req, res) {
     } catch (err) {
       console.error('Failed to stream media from Meta API:', err.message);
       return res.status(500).json({ error: 'Failed to download media' });
+    }
+  }
+
+  // 2C. FETCH AI EXECUTIONS LOGS
+  if (req.method === 'GET' && action === 'executions') {
+    try {
+      const url = `${SUPABASE_URL}/rest/v1/whatsapp_executions?select=*&order=created_at.desc&limit=150`;
+      const response = await axios.get(url, {
+        headers: {
+          'apikey': SUPABASE_KEY,
+          'Authorization': `Bearer ${SUPABASE_KEY}`
+        }
+      });
+
+      const executions = response.data || [];
+      const total_count = executions.length;
+      const success_count = executions.filter(e => e.status === 'SUCCESS').length;
+      const error_count = executions.filter(e => e.status === 'ERROR').length;
+      const ignored_count = executions.filter(e => e.status === 'IGNORED').length;
+      const validDurations = executions.filter(e => e.duration_ms > 0).map(e => e.duration_ms);
+      const avg_duration = validDurations.length ? Math.round(validDurations.reduce((a, b) => a + b, 0) / validDurations.length) : 0;
+
+      return res.status(200).json({
+        executions,
+        stats: {
+          total_count,
+          success_count,
+          error_count,
+          ignored_count,
+          avg_duration
+        }
+      });
+    } catch (err) {
+      console.error('Failed to fetch whatsapp executions:', err.response?.data || err.message);
+      return res.status(500).json({ error: err.response?.data || err.message });
     }
   }
 

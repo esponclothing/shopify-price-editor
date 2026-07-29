@@ -5,7 +5,7 @@ import {
   Send, Image as ImageIcon, Mic, FileText, Lock, Unlock, Play,
   Pause, ShieldAlert, BarChart3, Users, ArrowLeft, Check, CheckCheck,
   Bell, BellRing, Camera, StopCircle, Upload, Trash2,
-  ShoppingBag, Package, Truck, ExternalLink, ChevronDown, ChevronUp, MapPin, Bot, Save
+  ShoppingBag, Package, Truck, ExternalLink, ChevronDown, ChevronUp, MapPin, Bot, Save, DollarSign
 } from 'lucide-react';
 
 
@@ -32,6 +32,8 @@ export default function WhatsAppAIDashboard() {
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [inboxSearch, setInboxSearch] = useState('');
   const [chatStatusFilter, setChatStatusFilter] = useState('open'); // 'open' | 'closed' | 'all'
+  const [orderStatusFilter, setOrderStatusFilter] = useState('all'); // 'all' | 'in_transit' | 'out_for_delivery' | 'delivered' | 'cancelled'
+  const [showChatFilters, setShowChatFilters] = useState(false);
   const [replyType, setReplyType] = useState('text'); // 'text' | 'image' | 'audio' | 'template'
   const [replyText, setReplyText] = useState('');
   const [mediaUrl, setMediaUrl] = useState('');
@@ -39,6 +41,10 @@ export default function WhatsAppAIDashboard() {
   const [sendingReply, setSendingReply] = useState(false);
   const messagesEndRef = useRef(null);
   const shouldScrollRef = useRef(false); // only scroll to bottom on first load or send
+  const selectedChatRef = useRef(selectedChat);
+  selectedChatRef.current = selectedChat;
+  const activeSubTabRef = useRef(activeSubTab);
+  activeSubTabRef.current = activeSubTab;
 
   // --- NOTIFICATIONS STATE ---
   // Persist bell state across refreshes via localStorage
@@ -89,7 +95,7 @@ export default function WhatsAppAIDashboard() {
   // --- ORDERS SUMMARY & FILTER STATES ---
   const [ordersSummaryMap, setOrdersSummaryMap] = useState({});
   const [inboxOrderFilter, setInboxOrderFilter] = useState('all');
-  const [orderModalFilter, setOrderModalFilter] = useState('active');
+  const [orderModalFilter, setOrderModalFilter] = useState('all');
 
   const getOrderSummaryForPhone = (phoneStr) => {
     if (!phoneStr) return null;
@@ -307,17 +313,15 @@ export default function WhatsAppAIDashboard() {
           });
         });
         
-        if (selectedChat) {
-          const updated = loadedChats.find(c => c.phone === selectedChat.phone);
-          if (updated) {
-            setSelectedChat(prev => {
-              if (togglingAIRef.current.has(updated.phone)) {
-                return { ...updated, ai_paused: prev.ai_paused };
-              }
-              return updated;
-            });
+        setSelectedChat(prev => {
+          if (!prev) return null;
+          const updated = loadedChats.find(c => c.phone === prev.phone);
+          if (!updated) return prev;
+          if (togglingAIRef.current.has(updated.phone)) {
+            return { ...updated, ai_paused: prev.ai_paused };
           }
-        }
+          return updated;
+        });
       }
 
       fetch('/api/shopify-orders-summary')
@@ -336,7 +340,6 @@ export default function WhatsAppAIDashboard() {
   const fetchMessages = async (phone, isQuiet = false) => {
     if (!phone) return;
     if (!isQuiet) {
-      setLoadingMessages(true);
       shouldScrollRef.current = true; // scroll to bottom on first load
     }
     try {
@@ -369,15 +372,13 @@ export default function WhatsAppAIDashboard() {
       }
     } catch (err) {
       console.error('Failed to fetch messages:', err);
-    } finally {
-      if (!isQuiet) setLoadingMessages(false);
     }
   };
 
   const fetchExecutions = async (isQuiet = false) => {
     if (!isQuiet) setLoadingLogs(true);
     try {
-      const res = await fetch('/api/whatsapp-executions');
+      const res = await fetch('/api/whatsapp-inbox?action=executions');
       if (res.ok) {
         const data = await res.json();
         setExecutions(data.executions || []);
@@ -395,6 +396,7 @@ export default function WhatsAppAIDashboard() {
     if (!phone) return;
     setOrdersCustomerPhone(phone);
     setShowOrdersModal(true);
+    setOrderModalFilter('all');
     setOrdersLoading(true);
     setCustomerOrders([]);
     setExpandedOrderId(null);
@@ -565,8 +567,8 @@ export default function WhatsAppAIDashboard() {
     const interval = setInterval(() => {
       fetchChats(true);
       fetchExecutions(true);
-      if (selectedChat?.phone && activeSubTab === 'inbox') {
-        fetchMessages(selectedChat.phone, true);
+      if (selectedChatRef.current?.phone && activeSubTabRef.current === 'inbox') {
+        fetchMessages(selectedChatRef.current.phone, true);
       }
     }, 7000);
 
@@ -574,7 +576,7 @@ export default function WhatsAppAIDashboard() {
     const handleOnline = () => {
       fetchChats(false);
       fetchExecutions(false);
-      if (selectedChat?.phone) fetchMessages(selectedChat.phone, false);
+      if (selectedChatRef.current?.phone) fetchMessages(selectedChatRef.current.phone, false);
     };
     window.addEventListener('online', handleOnline);
 
@@ -582,7 +584,7 @@ export default function WhatsAppAIDashboard() {
       clearInterval(interval);
       window.removeEventListener('online', handleOnline);
     };
-  }, [activeSubTab, selectedChat?.phone]);
+  }, []);
 
   useEffect(() => {
     if (selectedChat?.phone) {
@@ -789,6 +791,11 @@ export default function WhatsAppAIDashboard() {
   const openChatsCount = chats.filter(c => (c.chat_status || 'open') === 'open').length;
   const closedChatsCount = chats.filter(c => c.chat_status === 'closed').length;
 
+  const transitCount = chats.filter(c => c.order_status === 'in_transit').length;
+  const outForDeliveryCount = chats.filter(c => c.order_status === 'out_for_delivery').length;
+  const deliveredCount = chats.filter(c => c.order_status === 'delivered').length;
+  const cancelledCount = chats.filter(c => c.order_status === 'cancelled').length;
+
   const filteredChats = chats.filter(c => {
     const matchesSearch =
       !inboxSearch ||
@@ -799,7 +806,10 @@ export default function WhatsAppAIDashboard() {
       chatStatusFilter === 'all' ||
       (chatStatusFilter === 'open' && (c.chat_status || 'open') === 'open') ||
       (chatStatusFilter === 'closed' && c.chat_status === 'closed');
-    return matchesSearch && matchesStatus;
+    const matchesOrder =
+      orderStatusFilter === 'all' ||
+      c.order_status === orderStatusFilter;
+    return matchesSearch && matchesStatus && matchesOrder;
   });
 
   const formatPhone = (p) => {
@@ -912,30 +922,35 @@ export default function WhatsAppAIDashboard() {
                 : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
             }`}
           >
-            <MessageSquare className="w-3.5 h-3.5" />
-            Inbox ({chats.length})
+            <MessageSquare className="w-3.5 h-3.5 shrink-0" />
+            <span className="hidden sm:inline">Inbox</span>
+            <span>({chats.length})</span>
           </button>
           <button
             onClick={() => setActiveSubTab('logs')}
-            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+            className={`flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 ${
               activeSubTab === 'logs'
                 ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/30'
                 : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
             }`}
+            title="AI Charts & Logs"
           >
-            <BarChart3 className="w-3.5 h-3.5" />
-            AI Charts & Logs
+            <BarChart3 className="w-3.5 h-3.5 shrink-0" />
+            <span className="sm:hidden">Logs</span>
+            <span className="hidden sm:inline">AI Charts & Logs</span>
           </button>
           <button
             onClick={() => setActiveSubTab('instructions')}
-            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+            className={`flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 ${
               activeSubTab === 'instructions'
                 ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/30'
                 : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
             }`}
+            title="AI Instructions & Prompts"
           >
-            <Bot className="w-3.5 h-3.5" />
-            AI Instructions & Prompts
+            <Bot className="w-3.5 h-3.5 shrink-0" />
+            <span className="sm:hidden">Prompts</span>
+            <span className="hidden sm:inline">AI Instructions & Prompts</span>
           </button>
         </div>
 
@@ -959,69 +974,145 @@ export default function WhatsAppAIDashboard() {
         <div className="relative flex-1 min-h-0 lg:grid lg:grid-cols-12 lg:gap-6 lg:p-6">
           {/* LEFT PANE: CHAT LIST - full height on mobile, grid col on desktop */}
           <div className={`lg:col-span-4 bg-slate-900/90 lg:rounded-2xl border-r lg:border border-slate-800 flex flex-col overflow-hidden shadow-xl h-full ${selectedChat ? 'hidden lg:flex' : 'flex'}`}>
-            <div className="p-4 border-b border-slate-800 bg-slate-950/60 flex items-center justify-between shrink-0">
-              <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                <Users className="w-4 h-4 text-emerald-400" />
-                Customer Chats
-              </h3>
-              <button
-                onClick={() => fetchChats(false)}
-                className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
-                title="Refresh chats"
-              >
-                <RefreshCw className={`w-4 h-4 ${loadingChats ? 'animate-spin' : ''}`} />
-              </button>
-            </div>
-
-            {/* SEARCH BOX & OPEN/CLOSED FILTER */}
-            <div className="p-3 border-b border-slate-800 bg-slate-950/30 space-y-2.5">
-              <div className="relative">
-                <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-500" />
-                <input
-                  type="text"
-                  placeholder="Search phone, name or message..."
-                  value={inboxSearch}
-                  onChange={(e) => setInboxSearch(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-9 pr-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
-                />
-              </div>
-
-              {/* Chat Status Filter Pills */}
-              <div className="grid grid-cols-3 gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800 text-[11px] font-bold">
+            {/* SEARCH BOX & COLLAPSIBLE FILTER BUTTON */}
+            <div className="p-2.5 border-b border-slate-800 bg-slate-950/40 space-y-2 shrink-0">
+              <div className="flex items-center gap-1.5">
+                <div className="relative flex-1">
+                  <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-500" />
+                  <input
+                    type="text"
+                    placeholder="Search phone, name or message..."
+                    value={inboxSearch}
+                    onChange={(e) => setInboxSearch(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-9 pr-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
                 <button
                   type="button"
-                  onClick={() => setChatStatusFilter('open')}
-                  className={`py-1 rounded-md transition-all flex items-center justify-center gap-1 ${
-                    chatStatusFilter === 'open'
-                      ? 'bg-emerald-600 text-white shadow-sm'
-                      : 'text-slate-400 hover:text-slate-200'
+                  onClick={() => setShowChatFilters(p => !p)}
+                  className={`px-2.5 py-2 rounded-lg border text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                    showChatFilters || chatStatusFilter !== 'open' || orderStatusFilter !== 'all'
+                      ? 'bg-emerald-600/20 text-emerald-300 border-emerald-500/40'
+                      : 'bg-slate-900 text-slate-400 hover:text-white border-slate-800'
                   }`}
+                  title="Toggle Filters"
                 >
-                  <span>Open ({openChatsCount})</span>
+                  <Filter className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Filters</span>
+                  {(chatStatusFilter !== 'open' || orderStatusFilter !== 'all') && (
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  )}
                 </button>
                 <button
                   type="button"
-                  onClick={() => setChatStatusFilter('closed')}
-                  className={`py-1 rounded-md transition-all flex items-center justify-center gap-1 ${
-                    chatStatusFilter === 'closed'
-                      ? 'bg-slate-700 text-white shadow-sm'
-                      : 'text-slate-400 hover:text-slate-200'
-                  }`}
+                  onClick={() => fetchChats(false)}
+                  className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 border border-slate-800 transition-colors shrink-0"
+                  title="Refresh chats"
                 >
-                  <span>Closed ({closedChatsCount})</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setChatStatusFilter('all')}
-                  className={`py-1 rounded-md transition-all flex items-center justify-center gap-1 ${
-                    chatStatusFilter === 'all'
-                      ? 'bg-slate-800 text-white shadow-sm'
-                      : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  <span>All ({chats.length})</span>
+                  <RefreshCw className={`w-3.5 h-3.5 ${loadingChats ? 'animate-spin' : ''}`} />
                 </button>
               </div>
+
+              {/* COLLAPSIBLE FILTERS MENU */}
+              {showChatFilters && (
+                <div className="pt-2 space-y-2 border-t border-slate-800/80 animate-[fadeIn_0.15s_ease]">
+                  {/* Chat Status Filter Pills */}
+                  <div className="grid grid-cols-3 gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800 text-[11px] font-bold">
+                    <button
+                      type="button"
+                      onClick={() => setChatStatusFilter('open')}
+                      className={`py-1 rounded-md transition-all flex items-center justify-center gap-1 ${
+                        chatStatusFilter === 'open'
+                          ? 'bg-emerald-600 text-white shadow-sm'
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      <span>Open ({openChatsCount})</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setChatStatusFilter('closed')}
+                      className={`py-1 rounded-md transition-all flex items-center justify-center gap-1 ${
+                        chatStatusFilter === 'closed'
+                          ? 'bg-slate-700 text-white shadow-sm'
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      <span>Closed ({closedChatsCount})</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setChatStatusFilter('all')}
+                      className={`py-1 rounded-md transition-all flex items-center justify-center gap-1 ${
+                        chatStatusFilter === 'all'
+                          ? 'bg-slate-800 text-white shadow-sm'
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      <span>All ({chats.length})</span>
+                    </button>
+                  </div>
+
+                  {/* Row 2: Order Shipment Status Filters */}
+                  <div className="flex items-center gap-1 overflow-x-auto pb-0.5 no-scrollbar text-[10px] font-bold">
+                    <button
+                      type="button"
+                      onClick={() => setOrderStatusFilter('all')}
+                      className={`px-2 py-1 rounded-md transition-all whitespace-nowrap ${
+                        orderStatusFilter === 'all'
+                          ? 'bg-slate-700 text-white shadow-sm'
+                          : 'bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800'
+                      }`}
+                    >
+                      🛍️ All
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setOrderStatusFilter('in_transit')}
+                      className={`px-2 py-1 rounded-md transition-all whitespace-nowrap ${
+                        orderStatusFilter === 'in_transit'
+                          ? 'bg-blue-600 text-white shadow-sm'
+                          : 'bg-slate-900 text-blue-400 hover:text-blue-300 border border-slate-800'
+                      }`}
+                    >
+                      🚚 Transit ({transitCount})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setOrderStatusFilter('out_for_delivery')}
+                      className={`px-2 py-1 rounded-md transition-all whitespace-nowrap ${
+                        orderStatusFilter === 'out_for_delivery'
+                          ? 'bg-amber-600 text-white shadow-sm'
+                          : 'bg-slate-900 text-amber-400 hover:text-amber-300 border border-slate-800'
+                      }`}
+                    >
+                      🛵 Out ({outForDeliveryCount})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setOrderStatusFilter('delivered')}
+                      className={`px-2 py-1 rounded-md transition-all whitespace-nowrap ${
+                        orderStatusFilter === 'delivered'
+                          ? 'bg-emerald-600 text-white shadow-sm'
+                          : 'bg-slate-900 text-emerald-400 hover:text-emerald-300 border border-slate-800'
+                      }`}
+                    >
+                      📦 Delivered ({deliveredCount})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setOrderStatusFilter('cancelled')}
+                      className={`px-2 py-1 rounded-md transition-all whitespace-nowrap ${
+                        orderStatusFilter === 'cancelled'
+                          ? 'bg-rose-600 text-white shadow-sm'
+                          : 'bg-slate-900 text-rose-400 hover:text-rose-300 border border-slate-800'
+                      }`}
+                    >
+                      ❌ Cancelled ({cancelledCount})
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* CHAT LIST */}
@@ -1045,26 +1136,30 @@ export default function WhatsAppAIDashboard() {
                     >
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center justify-between gap-2 mb-1">
-                          <button
-                            type="button"
-                            onClick={(e) => { e.stopPropagation(); handleOpenCustomerOrders(chat.phone); }}
-                            className="font-bold text-sm text-white hover:text-emerald-400 truncate flex items-center gap-1.5 cursor-pointer transition-colors"
-                            title="Click to view Customer Orders"
-                          >
-                            <div className="flex flex-col text-left min-w-0">
-                              <span className="truncate">
+                          <div className="flex items-center gap-1.5 min-w-0 flex-1 mr-2">
+                            <div className="flex flex-col text-left min-w-0 truncate">
+                              <span className="font-bold text-sm text-white truncate">
                                 {chat.customer_name || formatPhone(chat.phone)}
                               </span>
                               {chat.customer_name && (
-                                <span className="text-[10px] text-slate-400 font-normal">
+                                <span className="text-[10px] text-slate-400 font-normal truncate">
                                   {formatPhone(chat.phone)}
                                 </span>
                               )}
                             </div>
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold flex items-center gap-0.5">
-                              🛍️ Orders
-                            </span>
-                          </button>
+                            {chat.has_order && (
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); handleOpenCustomerOrders(chat.phone); }}
+                                className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 font-bold flex items-center gap-1 shrink-0 transition-colors cursor-pointer"
+                                title="Click to view Customer Orders"
+                              >
+                                <ShoppingBag className="w-3 h-3 text-emerald-400 shrink-0" />
+                                <span className="hidden sm:inline">Orders</span>
+                                {chat.order_count ? <span>({chat.order_count})</span> : null}
+                              </button>
+                            )}
+                          </div>
                           <span className="text-[10px] text-slate-500 whitespace-nowrap">
                             {new Date(chat.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                           </span>
@@ -1075,19 +1170,21 @@ export default function WhatsAppAIDashboard() {
                         </p>
                         <div className="flex items-center gap-1.5 flex-wrap">
                           {chat.is_within_24h ? (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                              <Unlock className="w-3 h-3" />
-                              24h Open
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" title="24-hour window open">
+                              <Unlock className="w-3 h-3 shrink-0" />
+                              <span className="hidden sm:inline">24h Open</span>
+                              <span className="sm:hidden">24h</span>
                             </span>
                           ) : (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20" title="24-hour customer service window has expired.">
-                              <Lock className="w-3 h-3" />
-                              Window Closed ({chat.hours_elapsed}h)
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20" title={`24-hour customer service window has expired (${chat.hours_elapsed}h elapsed)`}>
+                              <Lock className="w-3 h-3 shrink-0" />
+                              <span className="hidden sm:inline">Window Closed ({chat.hours_elapsed}h)</span>
+                              <span className="sm:hidden">{chat.hours_elapsed}h</span>
                             </span>
                           )}
                           {chat.chat_status === 'closed' && (
                             <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-semibold bg-slate-800 text-slate-400 border border-slate-700">
-                              ✓ Solved
+                              ✓ <span className="hidden sm:inline">Solved</span>
                             </span>
                           )}
 
@@ -1104,7 +1201,17 @@ export default function WhatsAppAIDashboard() {
                             }`}
                             title={chat.ai_paused ? "AI auto-reply is currently PAUSED. Click to enable AI." : "AI is automatically replying. Click to pause AI."}
                           >
-                            <span>{chat.ai_paused ? '⏸️ AI Paused' : '🤖 AI Active'}</span>
+                            {chat.ai_paused ? (
+                              <>
+                                <Pause className="w-3 h-3 text-rose-400 shrink-0" />
+                                <span className="hidden sm:inline">AI Paused</span>
+                              </>
+                            ) : (
+                              <>
+                                <Bot className="w-3 h-3 text-emerald-400 shrink-0" />
+                                <span className="hidden sm:inline">AI Active</span>
+                              </>
+                            )}
                           </button>
                           <a
                             href={`tel:+${chat.phone}`}
@@ -1127,9 +1234,10 @@ export default function WhatsAppAIDashboard() {
           <div className={`lg:col-span-8 bg-slate-900/90 lg:rounded-2xl border-l lg:border border-slate-800 flex flex-col overflow-hidden shadow-xl h-full ${!selectedChat ? 'hidden lg:flex' : 'flex'}`}>
             {selectedChat ? (
               <>
-                {/* ACTIVE CHAT HEADER */}
-                <div className="p-4 border-b border-slate-800 bg-slate-950/60 flex items-center justify-between shrink-0">
-                  <div className="flex items-center gap-3 min-w-0">
+                {/* ACTIVE CHAT HEADER (COMPACT ON MOBILE: ICONS ONLY TO SAVE SPACE) */}
+                <div className="p-3 sm:p-4 border-b border-slate-800 bg-slate-950/60 flex items-center justify-between gap-2 shrink-0">
+                  {/* LEFT: BACK BUTTON + CUSTOMER NAME */}
+                  <div className="flex items-center gap-2 min-w-0 flex-1">
                     <button
                       type="button"
                       onClick={() => setSelectedChat(null)}
@@ -1138,49 +1246,55 @@ export default function WhatsAppAIDashboard() {
                     >
                       <ArrowLeft className="w-4 h-4" />
                     </button>
-                    <div className="flex items-center gap-2 truncate">
-                      <button
-                        type="button"
-                        onClick={() => handleOpenCustomerOrders(selectedChat.phone)}
-                        className="flex items-center gap-1.5 truncate hover:opacity-80 transition-opacity cursor-pointer group"
-                        title="Click to view Customer Orders"
-                      >
-                        <h4 className="font-bold text-white text-sm truncate group-hover:text-emerald-400 transition-colors">
-                          {selectedChat.customer_name ? `${selectedChat.customer_name} (${formatPhone(selectedChat.phone)})` : formatPhone(selectedChat.phone)}
-                        </h4>
-                        <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1 shrink-0 shadow-sm">
-                          🛍️ View Orders
-                        </span>
-                      </button>
-                      <a
-                        href={`tel:+${selectedChat.phone}`}
-                        className="p-1 rounded-md bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white transition-all shrink-0"
-                        title="Call Customer"
-                      >
-                        <Phone className="w-3.5 h-3.5" />
-                      </a>
-                    </div>
+                    <h4
+                      onClick={() => handleOpenCustomerOrders(selectedChat.phone)}
+                      className="font-bold text-white text-sm sm:text-base truncate hover:text-emerald-400 transition-colors cursor-pointer"
+                      title="Click customer name to view Shopify Orders"
+                    >
+                      {selectedChat.customer_name ? `${selectedChat.customer_name} (${formatPhone(selectedChat.phone)})` : formatPhone(selectedChat.phone)}
+                    </h4>
                   </div>
 
-                  <div className="flex items-center gap-1.5 shrink-0 relative">
-                    {/* Clickable 24H Lock pill with popup */}
+                  {/* RIGHT: ICON BUTTONS ON MOBILE, ICON+TEXT ON DESKTOP */}
+                  <div className="flex items-center gap-1 sm:gap-1.5 shrink-0 relative">
+                    {/* 1. Orders Button */}
+                    <button
+                      type="button"
+                      onClick={() => handleOpenCustomerOrders(selectedChat.phone)}
+                      className="inline-flex items-center gap-1 sm:gap-1.5 px-2 py-1.5 sm:px-2.5 sm:py-1 rounded-lg text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-600 hover:text-white transition-all shrink-0 shadow-sm"
+                      title="View Customer Shopify Orders"
+                    >
+                      <ShoppingBag className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                      <span className="hidden sm:inline">Orders</span>
+                    </button>
+
+                    {/* 2. Call Customer Button */}
+                    <a
+                      href={`tel:+${selectedChat.phone}`}
+                      className="p-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white transition-all shrink-0"
+                      title="Call Customer"
+                    >
+                      <Phone className="w-3.5 h-3.5" />
+                    </a>
+
+                    {/* 3. Clickable 24H Lock pill with popup */}
                     <div className="relative">
                       <button
                         type="button"
                         onClick={() => setShowLockInfo(v => !v)}
-                        className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-bold border cursor-pointer transition-all ${
+                        className={`inline-flex items-center gap-1 px-2 py-1.5 sm:py-1 rounded-lg text-xs font-bold border cursor-pointer transition-all shrink-0 ${
                           status24h.isOpen
                             ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/40 hover:bg-emerald-900'
                             : 'bg-rose-950/80 text-rose-300 border-rose-500/40 hover:bg-rose-900'
                         }`}
-                        title="Click to see 24H window details"
+                        title="24H Window Status"
                       >
                         {status24h.isOpen ? (
-                          <Unlock className="w-3 h-3 text-emerald-400 shrink-0" />
+                          <Unlock className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
                         ) : (
-                          <Lock className="w-3 h-3 text-rose-400 shrink-0" />
+                          <Lock className="w-3.5 h-3.5 text-rose-400 shrink-0" />
                         )}
-                        <span>{status24h.isOpen ? '24H Open' : '24H Closed'}</span>
+                        <span className="hidden sm:inline">{status24h.isOpen ? '24H Open' : '24H Closed'}</span>
                       </button>
 
                       {/* Time-remaining popup */}
@@ -1212,47 +1326,48 @@ export default function WhatsAppAIDashboard() {
                       )}
                     </div>{/* end relative wrapper */}
 
-                    {/* Mark Solved / Close Chat OR Reopen Chat toggle */}
+                    {/* 4. Mark Solved / Close Chat OR Reopen Chat toggle */}
                     {selectedChat.chat_status === 'closed' ? (
                       <button
                         type="button"
                         onClick={() => handleSetChatStatus(selectedChat, 'open')}
-                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold border bg-emerald-950/80 text-emerald-300 border-emerald-500/40 hover:bg-emerald-900 transition-all cursor-pointer shadow-md"
+                        className="inline-flex items-center gap-1 px-2 py-1.5 sm:py-1 rounded-lg text-xs font-bold border bg-emerald-950/80 text-emerald-300 border-emerald-500/40 hover:bg-emerald-900 transition-all cursor-pointer shadow-md shrink-0"
                         title="Re-open this chat into your active inbox"
                       >
-                        <RefreshCw className="w-3 h-3 text-emerald-400" />
-                        <span>Reopen Chat</span>
+                        <RefreshCw className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                        <span className="hidden sm:inline">Reopen</span>
                       </button>
                     ) : (
                       <button
                         type="button"
                         onClick={() => handleSetChatStatus(selectedChat, 'closed')}
-                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold border bg-amber-950/80 text-amber-300 border-amber-500/40 hover:bg-amber-900 transition-all cursor-pointer shadow-md"
-                        title="Mark customer query solved & close chat (removes from active open inbox)"
+                        className="inline-flex items-center gap-1 px-2 py-1.5 sm:py-1 rounded-lg text-xs font-bold border bg-amber-950/80 text-amber-300 border-amber-500/40 hover:bg-amber-900 transition-all cursor-pointer shadow-md shrink-0"
+                        title="Mark customer query solved & close chat"
                       >
-                        <CheckCircle2 className="w-3 h-3 text-amber-400" />
-                        <span>✓ Close Chat</span>
+                        <CheckCircle2 className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                        <span className="hidden sm:inline">Close</span>
                       </button>
                     )}
 
-                    {/* AI auto-reply toggle */}
+                    {/* 5. AI auto-reply toggle */}
                     <button
                       onClick={() => handleToggleAIPause(selectedChat)}
-                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg font-bold text-[11px] transition-all shadow-md ${
+                      className={`inline-flex items-center gap-1 px-2 py-1.5 sm:py-1 rounded-lg font-bold text-xs transition-all shadow-md shrink-0 ${
                         selectedChat.ai_paused
                           ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30 hover:bg-rose-500 hover:text-white'
                           : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-600 hover:text-white'
                       }`}
+                      title={selectedChat.ai_paused ? "AI is Paused (Click to Resume)" : "AI is Active (Click to Pause)"}
                     >
                       {selectedChat.ai_paused ? (
                         <>
-                          <Pause className="w-3 h-3" />
-                          <span>AI PAUSED</span>
+                          <Pause className="w-3.5 h-3.5 shrink-0" />
+                          <span className="hidden sm:inline">AI PAUSED</span>
                         </>
                       ) : (
                         <>
-                          <Play className="w-3 h-3" />
-                          <span>AI ACTIVE</span>
+                          <Bot className="w-3.5 h-3.5 shrink-0" />
+                          <span className="hidden sm:inline">AI ACTIVE</span>
                         </>
                       )}
                     </button>
@@ -1860,45 +1975,143 @@ export default function WhatsAppAIDashboard() {
           >
             {/* Modal Header */}
             <div className="p-4 px-6 border-b border-slate-800 bg-[#1e293b]/50 flex items-center justify-between gap-3 shrink-0">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
+              <div className="flex items-center gap-3 min-w-0 flex-1">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 shrink-0">
                   <ShoppingBag className="w-5 h-5" />
                 </div>
-                <div>
-                  <h3 className="font-bold text-white text-base flex items-center gap-2">
-                    <span>Customer Orders — {formatPhone(ordersCustomerPhone)}</span>
+                <div className="min-w-0 flex-1">
+                  <h3 className="font-bold text-white text-base flex items-center gap-2 truncate">
+                    <span className="truncate">Customer Orders — {formatPhone(ordersCustomerPhone)}</span>
                     {!ordersLoading && (
-                      <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shrink-0">
                         {customerOrders.length} {customerOrders.length === 1 ? 'Order' : 'Orders'}
                       </span>
                     )}
                   </h3>
-                  <p className="text-xs text-slate-400">
+                  <p className="text-xs text-slate-400 truncate">
                     Showing Shopify orders placed on website (Newest First)
                   </p>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 shrink-0">
                 <button
                   type="button"
                   onClick={() => handleOpenCustomerOrders(ordersCustomerPhone)}
                   disabled={ordersLoading}
-                  className="px-3 py-1.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+                  className="px-3 py-1.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50 shrink-0"
                   title="Refresh Live from Shopify"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${ordersLoading ? 'animate-spin' : ''}`} />
-                  Sync Live
+                  <span className="hidden sm:inline">Sync Live</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setShowOrdersModal(false)}
-                  className="p-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors cursor-pointer"
-                  title="Close"
+                  className="px-3 py-1.5 rounded-xl bg-rose-500/20 hover:bg-rose-500 text-rose-300 hover:text-white border border-rose-500/40 text-xs font-bold flex items-center gap-1 transition-all cursor-pointer shadow-md shrink-0"
+                  title="Close Modal"
                 >
-                  <X className="w-5 h-5" />
+                  <X className="w-4 h-4 shrink-0" />
+                  <span>Close</span>
                 </button>
               </div>
             </div>
+
+            {/* ORDERS FILTER TABS */}
+            {!ordersLoading && customerOrders.length > 0 && (
+              <div className="px-6 py-2.5 bg-[#0f172a] border-b border-slate-800 flex items-center gap-1.5 overflow-x-auto no-scrollbar text-xs font-bold shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setOrderModalFilter('all')}
+                  className={`px-3 py-1 rounded-lg transition-all whitespace-nowrap flex items-center gap-1 ${
+                    orderModalFilter === 'all'
+                      ? 'bg-emerald-600 text-white shadow-sm'
+                      : 'bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800'
+                  }`}
+                >
+                  <span>All ({customerOrders.length})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOrderModalFilter('cod')}
+                  className={`px-3 py-1 rounded-lg transition-all whitespace-nowrap flex items-center gap-1 ${
+                    orderModalFilter === 'cod'
+                      ? 'bg-amber-600 text-white shadow-sm'
+                      : 'bg-slate-900 text-amber-400 hover:text-amber-300 border border-slate-800'
+                  }`}
+                >
+                  <span>💵 COD ({customerOrders.filter(o => {
+                    const names = o?.payment_gateway_names;
+                    return Boolean(names && (
+                      (Array.isArray(names) && names.some(g => String(g).toLowerCase().includes('cash') || String(g).toLowerCase().includes('cod'))) ||
+                      String(names).toLowerCase().includes('cash') ||
+                      String(names).toLowerCase().includes('cod')
+                    ));
+                  }).length})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOrderModalFilter('prepaid')}
+                  className={`px-3 py-1 rounded-lg transition-all whitespace-nowrap flex items-center gap-1 ${
+                    orderModalFilter === 'prepaid'
+                      ? 'bg-blue-600 text-white shadow-sm'
+                      : 'bg-slate-900 text-blue-400 hover:text-blue-300 border border-slate-800'
+                  }`}
+                >
+                  <span>💳 Prepaid ({customerOrders.filter(o => {
+                    const names = o?.payment_gateway_names;
+                    const isCOD = Boolean(names && (
+                      (Array.isArray(names) && names.some(g => String(g).toLowerCase().includes('cash') || String(g).toLowerCase().includes('cod'))) ||
+                      String(names).toLowerCase().includes('cash') ||
+                      String(names).toLowerCase().includes('cod')
+                    ));
+                    return !isCOD;
+                  }).length})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOrderModalFilter('fulfilled')}
+                  className={`px-3 py-1 rounded-lg transition-all whitespace-nowrap flex items-center gap-1 ${
+                    orderModalFilter === 'fulfilled'
+                      ? 'bg-purple-600 text-white shadow-sm'
+                      : 'bg-slate-900 text-purple-400 hover:text-purple-300 border border-slate-800'
+                  }`}
+                >
+                  <span>🚚 Fulfilled ({customerOrders.filter(o => {
+                    const status = (o?.fulfillment_status || 'unfulfilled').toLowerCase();
+                    return status === 'fulfilled' || status === 'partial';
+                  }).length})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOrderModalFilter('unfulfilled')}
+                  className={`px-3 py-1 rounded-lg transition-all whitespace-nowrap flex items-center gap-1 ${
+                    orderModalFilter === 'unfulfilled'
+                      ? 'bg-rose-600 text-white shadow-sm'
+                      : 'bg-slate-900 text-rose-400 hover:text-rose-300 border border-slate-800'
+                  }`}
+                >
+                  <span>⏳ Unfulfilled ({customerOrders.filter(o => {
+                    const status = (o?.fulfillment_status || 'unfulfilled').toLowerCase();
+                    return status === 'unfulfilled' || !o?.fulfillment_status;
+                  }).length})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOrderModalFilter('delivered')}
+                  className={`px-3 py-1 rounded-lg transition-all whitespace-nowrap flex items-center gap-1 ${
+                    orderModalFilter === 'delivered'
+                      ? 'bg-emerald-600 text-white shadow-sm'
+                      : 'bg-slate-900 text-emerald-400 hover:text-emerald-300 border border-slate-800'
+                  }`}
+                >
+                  <span>✅ Delivered ({customerOrders.filter(o => {
+                    const fulfillments = Array.isArray(o?.fulfillments) ? o.fulfillments : (typeof o?.fulfillments === 'string' ? (() => { try { return JSON.parse(o.fulfillments) || []; } catch(_) { return []; } })() : []);
+                    const fulfillment = fulfillments.length > 0 ? fulfillments[0] : null;
+                    return (fulfillment?.shipment_status || '').toLowerCase() === 'delivered';
+                  }).length})</span>
+                </button>
+              </div>
+            )}
 
             {/* Modal Content */}
             <div className="p-5 overflow-y-auto space-y-4 flex-1">
@@ -1918,18 +2131,41 @@ export default function WhatsAppAIDashboard() {
                   </p>
                 </div>
               ) : (
-                customerOrders.map((order) => {
+                customerOrders.filter(order => {
+                  if (!order || typeof order !== 'object') return false;
+                  if (orderModalFilter === 'all') return true;
+                  const isCOD = Boolean(order.payment_gateway_names && (
+                    (Array.isArray(order.payment_gateway_names) && order.payment_gateway_names.some(g => String(g).toLowerCase().includes('cash') || String(g).toLowerCase().includes('cod'))) ||
+                    String(order.payment_gateway_names).toLowerCase().includes('cash') ||
+                    String(order.payment_gateway_names).toLowerCase().includes('cod')
+                  ));
+                  if (orderModalFilter === 'cod') return isCOD;
+                  if (orderModalFilter === 'prepaid') return !isCOD;
+                  const status = (order.fulfillment_status || 'unfulfilled').toLowerCase();
+                  if (orderModalFilter === 'fulfilled') return status === 'fulfilled' || status === 'partial';
+                  if (orderModalFilter === 'unfulfilled') return status === 'unfulfilled' || !order.fulfillment_status;
+                  if (orderModalFilter === 'delivered') {
+                    const fulfillments = Array.isArray(order.fulfillments) ? order.fulfillments : (typeof order.fulfillments === 'string' ? (() => { try { return JSON.parse(order.fulfillments) || []; } catch(_) { return []; } })() : []);
+                    const fulfillment = fulfillments.length > 0 ? fulfillments[0] : null;
+                    return (fulfillment?.shipment_status || '').toLowerCase() === 'delivered';
+                  }
+                  return true;
+                }).map((order) => {
+                  if (!order || typeof order !== 'object') return null;
                   const isExpanded = expandedOrderId === order.id;
-                  const fulfillment = (order.fulfillments && order.fulfillments.length > 0) ? order.fulfillments[0] : null;
+                  const fulfillments = Array.isArray(order.fulfillments) ? order.fulfillments : (typeof order.fulfillments === 'string' ? (() => { try { return JSON.parse(order.fulfillments) || []; } catch(_) { return []; } })() : []);
+                  const fulfillment = fulfillments.length > 0 ? fulfillments[0] : null;
                   const trackingNumber = fulfillment?.tracking_number || null;
-                  const trackingUrl = fulfillment?.tracking_url || (fulfillment?.tracking_urls && fulfillment.tracking_urls[0]) || null;
+                  const trackingUrl = fulfillment?.tracking_url || (Array.isArray(fulfillment?.tracking_urls) && fulfillment.tracking_urls[0]) || null;
                   const trackingCompany = fulfillment?.tracking_company || null;
                   const isFulfilled = order.fulfillment_status === 'fulfilled' || trackingNumber;
                   const isCancelled = !!order.cancelled_at;
+                  const shipAddr = order.shipping_address && typeof order.shipping_address === 'object' ? order.shipping_address : (typeof order.shipping_address === 'string' ? (() => { try { return JSON.parse(order.shipping_address) || null; } catch(_) { return null; } })() : null);
+                  const lineItems = Array.isArray(order.line_items) ? order.line_items : (typeof order.line_items === 'string' ? (() => { try { return JSON.parse(order.line_items) || []; } catch(_) { return []; } })() : []);
 
                   return (
                     <div
-                      key={order.id}
+                      key={order.id || Math.random()}
                       className="bg-[#1e293b]/60 border border-slate-700/70 rounded-2xl overflow-hidden transition-all shadow-md hover:border-slate-600"
                     >
                       {/* Order Card Top Bar */}
@@ -1940,16 +2176,22 @@ export default function WhatsAppAIDashboard() {
                         <div className="flex items-center gap-3">
                           <div className="flex flex-col">
                             <span className="font-bold text-white text-base">
-                              {order.name || `#${order.order_number}`}
+                              {order.name || (order.order_number ? `#${order.order_number}` : '#Order')}
                             </span>
                             <span className="text-xs text-slate-400">
-                              {new Date(order.created_at).toLocaleString([], {
-                                day: 'numeric',
-                                month: 'short',
-                                year: 'numeric',
-                                hour: '2-digit',
-                                minute: '2-digit'
-                              })}
+                              {(() => {
+                                try {
+                                  return new Date(order.created_at || Date.now()).toLocaleString([], {
+                                    day: 'numeric',
+                                    month: 'short',
+                                    year: 'numeric',
+                                    hour: '2-digit',
+                                    minute: '2-digit'
+                                  });
+                                } catch (_) {
+                                  return 'Recent';
+                                }
+                              })()}
                             </span>
                           </div>
                         </div>
@@ -2003,22 +2245,22 @@ export default function WhatsAppAIDashboard() {
                               <MapPin className="w-3.5 h-3.5 text-emerald-400" />
                               <span>Shipping Address</span>
                             </h5>
-                            {order.shipping_address ? (
+                            {shipAddr ? (
                               <div className="bg-slate-950/60 rounded-xl p-3 border border-slate-800/80 space-y-1 text-slate-300">
                                 <p className="font-bold text-white">
-                                  {order.shipping_address.first_name || ''} {order.shipping_address.last_name || ''}
+                                  {shipAddr.first_name || ''} {shipAddr.last_name || ''}
                                 </p>
                                 <p>
                                   {[
-                                    order.shipping_address.address1,
-                                    order.shipping_address.address2,
-                                    order.shipping_address.city,
-                                    order.shipping_address.province,
-                                    order.shipping_address.zip
+                                    shipAddr.address1,
+                                    shipAddr.address2,
+                                    shipAddr.city,
+                                    shipAddr.province,
+                                    shipAddr.zip
                                   ].filter(Boolean).join(', ')}
                                 </p>
-                                {order.shipping_address.phone && (
-                                  <p className="text-slate-400">Phone: {formatPhone(order.shipping_address.phone)}</p>
+                                {shipAddr.phone && (
+                                  <p className="text-slate-400">Phone: {formatPhone(shipAddr.phone)}</p>
                                 )}
                               </div>
                             ) : (
@@ -2056,24 +2298,24 @@ export default function WhatsAppAIDashboard() {
                           <div>
                             <h5 className="font-bold text-slate-300 mb-1.5 flex items-center gap-1.5 text-xs uppercase tracking-wider">
                               <ShoppingBag className="w-3.5 h-3.5 text-emerald-400" />
-                              <span>Items Ordered ({(order.line_items || []).length})</span>
+                              <span>Items Ordered ({lineItems.length})</span>
                             </h5>
                             <div className="bg-slate-950/60 rounded-xl p-3 border border-slate-800/80 space-y-2">
-                              {(order.line_items || []).map((item, i) => (
+                              {lineItems.map((item, i) => (
                                 <div key={i} className="flex items-center justify-between gap-2 text-slate-300">
                                   <div className="flex items-center gap-2 min-w-0">
                                     <span className="w-6 h-6 rounded-md bg-emerald-500/10 text-emerald-400 font-bold flex items-center justify-center text-xs shrink-0">
-                                      {item.quantity}x
+                                      {item?.quantity || 1}x
                                     </span>
                                     <span className="truncate text-white font-medium">
-                                      {item.title}
-                                      {item.variant_title && (
+                                      {item?.title || 'Product Item'}
+                                      {item?.variant_title && (
                                         <span className="text-slate-400 font-normal ml-1">({item.variant_title})</span>
                                       )}
                                     </span>
                                   </div>
                                   <span className="font-semibold text-emerald-400 shrink-0">
-                                    ₹{item.price}
+                                    ₹{item?.price || 0}
                                   </span>
                                 </div>
                               ))}
