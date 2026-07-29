@@ -5,7 +5,8 @@ import {
   Send, Image as ImageIcon, Mic, FileText, Lock, Unlock, Play,
   Pause, ShieldAlert, BarChart3, Users, ArrowLeft, Check, CheckCheck,
   Bell, BellRing, Camera, StopCircle, Upload, Trash2,
-  ShoppingBag, Package, Truck, ExternalLink, ChevronDown, ChevronUp, MapPin, Bot, Save, DollarSign
+  ShoppingBag, Package, Truck, ExternalLink, ChevronDown, ChevronUp, MapPin, Bot, Save, DollarSign,
+  ShoppingCart, ShieldCheck, UserCheck, Activity
 } from 'lucide-react';
 
 
@@ -83,6 +84,18 @@ export default function WhatsAppAIDashboard() {
   const [loadingLogs, setLoadingLogs] = useState(false);
   const [filterStatus, setFilterStatus] = useState('ALL');
   const [searchQuery, setSearchQuery] = useState('');
+
+  // --- 11FIT ABANDONED CARTS (MOBILE NUMBER ONLY) & OTP ANALYTICS STATE ---
+  const [elevenFitData, setElevenFitData] = useState({
+    analytics: { totalOtpSent: 0, totalOtpVerified: 0, totalOtpFailed: 0, verificationRate: 100, totalMobileUsers: 0, activeAbandonedCarts: 0 },
+    abandonedCarts: [],
+    otpLogs: [],
+    networkUsers: []
+  });
+  const [loadingElevenFit, setLoadingElevenFit] = useState(false);
+  const [newAbCartNotification, setNewAbCartNotification] = useState(null); // toast notification banner for new carts
+  const [abCartSubView, setAbCartSubView] = useState('carts'); // 'carts' | 'otp_logs' | 'users'
+  const [abCartSearch, setAbCartSearch] = useState('');
 
   // --- CUSTOMER ORDERS MODAL STATE ---
   const [showOrdersModal, setShowOrdersModal] = useState(false);
@@ -559,14 +572,79 @@ export default function WhatsAppAIDashboard() {
     }
   };
 
+  // --- 11FIT ANALYTICS HANDLER ---
+  const fetchElevenFitAnalytics = async (isQuiet = false) => {
+    if (!isQuiet) setLoadingElevenFit(true);
+    try {
+      const res = await fetch('/api/11fit-analytics');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          setElevenFitData(data);
+          const carts = data.abandonedCarts || [];
+          if (carts.length > 0) {
+            const newestCart = carts[0];
+            const lastSeenId = localStorage.getItem('11fit_last_ab_cart_id');
+            if (lastSeenId && lastSeenId !== String(newestCart.id)) {
+               setNewAbCartNotification({
+                 id: newestCart.id,
+                 phone: newestCart.phone,
+                 price: newestCart.total_price,
+                 itemsCount: newestCart.line_items?.length || 1,
+                 currency: newestCart.currency || 'INR'
+               });
+               triggerAlertNotification(
+                 `🛒 New 11FIT Abandoned Cart!`,
+                 `Mobile: ${newestCart.phone} | Amount: ₹${newestCart.total_price}`
+               );
+            }
+            localStorage.setItem('11fit_last_ab_cart_id', String(newestCart.id));
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Failed to fetch 11FIT analytics:', err);
+    } finally {
+      if (!isQuiet) setLoadingElevenFit(false);
+    }
+  };
+
+  const handleSendAbCartRecovery = async (cart) => {
+    if (!cart || !cart.phone) return;
+    const itemsText = (cart.line_items || [])
+      .map(i => `• ${i.quantity}x ${i.title}`)
+      .join('\n');
+    const checkoutLink = cart.abandoned_checkout_url || 'https://11fit.in';
+    const msgText = `🛒 *Forgot something at 11FIT?*\n\n` +
+      `Hi there! We noticed you left some amazing items in your cart:\n\n` +
+      `${itemsText || '• Your 11FIT Cart'}\n\n` +
+      `*Total Value:* ₹${cart.total_price || '0.00'}\n\n` +
+      `Your cart is saved! Complete your checkout securely with 1-click here:\n` +
+      `${checkoutLink}\n\n` +
+      `Need any help with sizing or offers? Reply to this message! 🛍️`;
+
+    setActiveSubTab('inbox');
+    setInboxSearch(cart.phone);
+    setReplyText(msgText);
+
+    try {
+      await navigator.clipboard.writeText(msgText);
+      alert(`Recovery message prepared for ${cart.phone} & copied to clipboard! Opening WhatsApp Inbox...`);
+    } catch (_) {
+      alert(`Opening WhatsApp Inbox for ${cart.phone}...`);
+    }
+  };
+
   // --- FOREGROUND POLLING + ONLINE RECONNECT ---
   useEffect(() => {
     fetchChats(false);
     fetchExecutions(false);
     fetchInstructions();
+    fetchElevenFitAnalytics(false);
     const interval = setInterval(() => {
       fetchChats(true);
       fetchExecutions(true);
+      fetchElevenFitAnalytics(true);
       if (selectedChatRef.current?.phone && activeSubTabRef.current === 'inbox') {
         fetchMessages(selectedChatRef.current.phone, true);
       }
@@ -576,6 +654,7 @@ export default function WhatsAppAIDashboard() {
     const handleOnline = () => {
       fetchChats(false);
       fetchExecutions(false);
+      fetchElevenFitAnalytics(false);
       if (selectedChatRef.current?.phone) fetchMessages(selectedChatRef.current.phone, false);
     };
     window.addEventListener('online', handleOnline);
@@ -951,6 +1030,24 @@ export default function WhatsAppAIDashboard() {
             <Bot className="w-3.5 h-3.5 shrink-0" />
             <span className="sm:hidden">Prompts</span>
             <span className="hidden sm:inline">AI Instructions & Prompts</span>
+          </button>
+          <button
+            onClick={() => setActiveSubTab('11fit_abandoned')}
+            className={`flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 ${
+              activeSubTab === '11fit_abandoned'
+                ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/30'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+            }`}
+            title="11FIT Abandoned Carts (Mobile Only) & OTP"
+          >
+            <ShoppingCart className="w-3.5 h-3.5 shrink-0" />
+            <span className="sm:hidden">11FIT Carts</span>
+            <span className="hidden sm:inline">11FIT Abandoned Carts & OTP</span>
+            {elevenFitData?.abandonedCarts?.length > 0 && (
+              <span className="ml-1 px-1.5 py-0.5 text-[10px] bg-red-500/20 text-red-400 border border-red-500/30 rounded-full font-extrabold animate-pulse">
+                {elevenFitData.abandonedCarts.length}
+              </span>
+            )}
           </button>
         </div>
 
@@ -1960,6 +2057,427 @@ export default function WhatsAppAIDashboard() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* --- 11FIT ABANDONED CARTS (MOBILE ONLY) & OTP ANALYTICS TAB --- */}
+      {activeSubTab === '11fit_abandoned' && (
+        <div className="flex-1 flex flex-col min-h-0 bg-[#0B0F19] overflow-y-auto p-3 sm:p-5">
+          {/* New Abandoned Cart Notification Banner */}
+          {newAbCartNotification && (
+            <div className="mb-4 bg-gradient-to-r from-red-900/40 via-amber-900/30 to-emerald-900/40 border border-red-500/50 rounded-2xl p-3 sm:p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xl animate-pulse">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-red-500/20 border border-red-500/30 flex items-center justify-center text-red-400 shrink-0">
+                  <ShoppingCart className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-red-500/20 text-red-400 border border-red-500/30">
+                      New Abandoned Cart Reached
+                    </span>
+                    <span className="text-xs text-slate-400 font-mono">11FIT Checkout</span>
+                  </div>
+                  <p className="text-sm font-extrabold text-white mt-1">
+                    Mobile: <span className="text-emerald-400 font-mono">{newAbCartNotification.phone}</span> • Amount: <span className="text-amber-400">₹{newAbCartNotification.price}</span> ({newAbCartNotification.itemsCount} items)
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                <button
+                  onClick={() => handleSendAbCartRecovery(newAbCartNotification)}
+                  className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-3 py-2 rounded-xl flex items-center gap-1.5 shadow-lg shadow-emerald-600/30 transition-all cursor-pointer"
+                >
+                  <MessageSquare className="w-3.5 h-3.5" />
+                  <span>Send Recovery Msg</span>
+                </button>
+                <button
+                  onClick={() => setNewAbCartNotification(null)}
+                  className="text-slate-400 hover:text-white px-2 py-1 text-xs"
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Top Analytics KPI Cards */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5 shrink-0">
+            <div className="bg-[#0F172A] border border-slate-800 rounded-2xl p-4 flex flex-col justify-between shadow-sm">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Abandoned Carts</span>
+                <div className="w-8 h-8 rounded-lg bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-400">
+                  <ShoppingCart className="w-4 h-4" />
+                </div>
+              </div>
+              <div className="mt-3">
+                <div className="text-2xl font-extrabold text-white">
+                  {elevenFitData?.analytics?.activeAbandonedCarts || elevenFitData?.abandonedCarts?.length || 0}
+                </div>
+                <div className="text-[11px] text-red-400 font-medium mt-0.5">
+                  Mobile Number Only Checkouts
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-[#0F172A] border border-slate-800 rounded-2xl p-4 flex flex-col justify-between shadow-sm">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Total OTP Sent</span>
+                <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
+                  <KeyRound className="w-4 h-4" />
+                </div>
+              </div>
+              <div className="mt-3">
+                <div className="text-2xl font-extrabold text-white">
+                  {elevenFitData?.analytics?.totalOtpSent || 0}
+                </div>
+                <div className="text-[11px] text-slate-400 font-medium mt-0.5">
+                  11FIT Authentication Requests
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-[#0F172A] border border-slate-800 rounded-2xl p-4 flex flex-col justify-between shadow-sm">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">OTP Verified</span>
+                <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
+                  <CheckCircle2 className="w-4 h-4" />
+                </div>
+              </div>
+              <div className="mt-3">
+                <div className="flex items-baseline gap-2">
+                  <span className="text-2xl font-extrabold text-white">
+                    {elevenFitData?.analytics?.totalOtpVerified || 0}
+                  </span>
+                  <span className="text-xs text-emerald-400 font-bold">
+                    ({elevenFitData?.analytics?.verificationRate || 100}%)
+                  </span>
+                </div>
+                <div className="text-[11px] text-emerald-400/80 font-medium mt-0.5">
+                  Verified Mobile Customers
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-[#0F172A] border border-slate-800 rounded-2xl p-4 flex flex-col justify-between shadow-sm">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Mobile Users</span>
+                <div className="w-8 h-8 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400">
+                  <UserCheck className="w-4 h-4" />
+                </div>
+              </div>
+              <div className="mt-3">
+                <div className="text-2xl font-extrabold text-white">
+                  {elevenFitData?.analytics?.totalMobileUsers || 0}
+                </div>
+                <div className="text-[11px] text-blue-400/80 font-medium mt-0.5">
+                  11FIT Network DB
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Controls Bar: Sub-views & Search */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 mb-4 bg-[#0F172A] p-3 rounded-2xl border border-slate-800">
+            <div className="flex items-center gap-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800 overflow-x-auto">
+              <button
+                onClick={() => setAbCartSubView('carts')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1.5 ${
+                  abCartSubView === 'carts'
+                    ? 'bg-emerald-600 text-white shadow'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <ShoppingCart className="w-3.5 h-3.5" />
+                <span>Abandoned Carts (Mobile Only)</span>
+                <span className="px-1.5 py-0.2 text-[10px] bg-black/30 rounded-full">
+                  {elevenFitData?.abandonedCarts?.length || 0}
+                </span>
+              </button>
+              <button
+                onClick={() => setAbCartSubView('otp_logs')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1.5 ${
+                  abCartSubView === 'otp_logs'
+                    ? 'bg-emerald-600 text-white shadow'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <KeyRound className="w-3.5 h-3.5" />
+                <span>OTP Analytics & SMS Logs</span>
+                <span className="px-1.5 py-0.2 text-[10px] bg-black/30 rounded-full">
+                  {elevenFitData?.otpLogs?.length || 0}
+                </span>
+              </button>
+              <button
+                onClick={() => setAbCartSubView('users')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1.5 ${
+                  abCartSubView === 'users'
+                    ? 'bg-emerald-600 text-white shadow'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <UserCheck className="w-3.5 h-3.5" />
+                <span>Mobile Network Users</span>
+                <span className="px-1.5 py-0.2 text-[10px] bg-black/30 rounded-full">
+                  {elevenFitData?.networkUsers?.length || 0}
+                </span>
+              </button>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1 sm:w-64">
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="Search mobile number or name..."
+                  value={abCartSearch}
+                  onChange={(e) => setAbCartSearch(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 font-mono"
+                />
+              </div>
+              <button
+                onClick={() => fetchElevenFitAnalytics(false)}
+                disabled={loadingElevenFit}
+                className="p-2 bg-slate-800 hover:bg-slate-700 active:bg-slate-900 rounded-xl text-slate-300 disabled:opacity-50 transition-colors"
+                title="Refresh 11FIT Data"
+              >
+                <RefreshCw className={`w-4 h-4 ${loadingElevenFit ? 'animate-spin text-emerald-400' : ''}`} />
+              </button>
+            </div>
+          </div>
+
+          {/* Sub-View 1: Abandoned Carts (Mobile Only) */}
+          {abCartSubView === 'carts' && (
+            <div className="flex-1">
+              {(elevenFitData?.abandonedCarts || [])
+                .filter((cart) => {
+                  if (!abCartSearch) return true;
+                  const q = abCartSearch.toLowerCase();
+                  return (
+                    (cart.phone && cart.phone.toLowerCase().includes(q)) ||
+                    (cart.customer_name && cart.customer_name.toLowerCase().includes(q)) ||
+                    (cart.email && cart.email.toLowerCase().includes(q))
+                  );
+                })
+                .length === 0 ? (
+                <div className="bg-[#0F172A] border border-slate-800 rounded-2xl p-12 text-center my-auto">
+                  <ShoppingCart className="w-12 h-12 text-slate-600 mx-auto mb-3" />
+                  <h3 className="text-base font-bold text-slate-300">No Abandoned Carts Found</h3>
+                  <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
+                    No abandoned checkouts with mobile numbers are currently open, or they match no search filter.
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                  {(elevenFitData?.abandonedCarts || [])
+                    .filter((cart) => {
+                      if (!abCartSearch) return true;
+                      const q = abCartSearch.toLowerCase();
+                      return (
+                        (cart.phone && cart.phone.toLowerCase().includes(q)) ||
+                        (cart.customer_name && cart.customer_name.toLowerCase().includes(q)) ||
+                        (cart.email && cart.email.toLowerCase().includes(q))
+                      );
+                    })
+                    .map((cart) => (
+                      <div
+                        key={cart.id}
+                        className="bg-[#0F172A] border border-slate-800 hover:border-slate-700/80 rounded-2xl p-4 flex flex-col justify-between transition-all shadow-md group relative"
+                      >
+                        <div>
+                          {/* Card Header: Mobile Number & Verified Status Badge */}
+                          <div className="flex items-start justify-between gap-2 mb-3">
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm font-extrabold text-white font-mono tracking-wide">
+                                  {cart.phone}
+                                </span>
+                                {cart.otp_status === 'verified' || cart.is_11fit_user ? (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                                    <CheckCircle2 className="w-3 h-3" />
+                                    <span>OTP Verified</span>
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                                    <Clock className="w-3 h-3" />
+                                    <span>Guest / OTP Pending</span>
+                                  </span>
+                                )}
+                              </div>
+                              {cart.customer_name && (
+                                <p className="text-xs text-slate-400 mt-0.5">
+                                  {cart.customer_name} {cart.email ? `(${cart.email})` : ''}
+                                </p>
+                              )}
+                            </div>
+                            <div className="text-right shrink-0">
+                              <span className="text-base font-extrabold text-amber-400 font-mono">
+                                ₹{cart.total_price}
+                              </span>
+                              <div className="text-[10px] text-slate-500">
+                                {cart.currency || 'INR'}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Line Items List */}
+                          <div className="bg-slate-950/80 border border-slate-800/80 rounded-xl p-3 my-3">
+                            <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 flex items-center justify-between">
+                              <span>Cart Items ({cart.line_items?.length || 0})</span>
+                              <span>Price</span>
+                            </div>
+                            <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                              {(cart.line_items || []).map((item, idx) => (
+                                <div key={idx} className="flex items-center justify-between text-xs text-slate-300">
+                                  <div className="truncate pr-2 font-medium">
+                                    <span className="text-emerald-400 font-bold">{item.quantity}x</span> {item.title}
+                                  </div>
+                                  <div className="font-mono text-slate-400 shrink-0">
+                                    ₹{item.price}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Card Footer: Timestamp & Action */}
+                        <div className="pt-3 border-t border-slate-800/80 flex items-center justify-between gap-2 mt-2">
+                          <span className="text-[11px] text-slate-400 font-mono">
+                            {cart.created_at ? new Date(cart.created_at).toLocaleString() : 'Recent'}
+                          </span>
+                          <button
+                            onClick={() => handleSendAbCartRecovery(cart)}
+                            className="bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-bold py-1.5 px-3 rounded-xl text-xs flex items-center gap-1.5 shadow-md shadow-emerald-600/20 transition-all cursor-pointer"
+                          >
+                            <MessageSquare className="w-3.5 h-3.5" />
+                            <span>1-Click Recovery Msg</span>
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Sub-View 2: OTP Analytics & SMS Logs */}
+          {abCartSubView === 'otp_logs' && (
+            <div className="flex-1 bg-[#0F172A] border border-slate-800 rounded-2xl overflow-hidden flex flex-col">
+              <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between">
+                <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider">
+                  11FIT OTP Analytics & Verification Events
+                </h4>
+                <span className="text-xs text-slate-500 font-mono">
+                  Showing {elevenFitData?.otpLogs?.length || 0} records
+                </span>
+              </div>
+              <div className="flex-1 overflow-y-auto">
+                {(elevenFitData?.otpLogs || []).length === 0 ? (
+                  <div className="p-12 text-center text-slate-500 text-xs">
+                    No OTP verification logs found in Supabase.
+                  </div>
+                ) : (
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="border-b border-slate-800 text-slate-400 uppercase font-mono text-[10px] bg-slate-950/60">
+                        <th className="py-2.5 px-4">Mobile Number</th>
+                        <th className="py-2.5 px-4">Event Type</th>
+                        <th className="py-2.5 px-4">Status</th>
+                        <th className="py-2.5 px-4">Timestamp</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/60">
+                      {(elevenFitData?.otpLogs || [])
+                        .filter((log) => {
+                          if (!abCartSearch) return true;
+                          const q = abCartSearch.toLowerCase();
+                          return log.phone && log.phone.toLowerCase().includes(q);
+                        })
+                        .map((log, index) => (
+                          <tr key={index} className="hover:bg-slate-800/40 transition-colors">
+                            <td className="py-2.5 px-4 font-mono font-bold text-white">
+                              {log.phone}
+                            </td>
+                            <td className="py-2.5 px-4">
+                              <span className="font-mono text-slate-300 uppercase text-[11px]">
+                                {log.event_type || log.event || 'OTP_VERIFY'}
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-4">
+                              {log.status === 'success' || log.status === 'verified' ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                                  <CheckCircle2 className="w-3 h-3" />
+                                  <span>Success</span>
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-500/20 text-red-400 border border-red-500/30">
+                                  <span>{log.status || 'Failed'}</span>
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-2.5 px-4 text-slate-400 font-mono text-[11px]">
+                              {log.created_at ? new Date(log.created_at).toLocaleString() : 'Recent'}
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Sub-View 3: Mobile Network Users */}
+          {abCartSubView === 'users' && (
+            <div className="flex-1 bg-[#0F172A] border border-slate-800 rounded-2xl overflow-hidden flex flex-col">
+              <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between">
+                <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider">
+                  11FIT Network Users (Mobile DB)
+                </h4>
+                <span className="text-xs text-slate-500 font-mono">
+                  Showing {elevenFitData?.networkUsers?.length || 0} records
+                </span>
+              </div>
+              <div className="flex-1 overflow-y-auto">
+                {(elevenFitData?.networkUsers || []).length === 0 ? (
+                  <div className="p-12 text-center text-slate-500 text-xs">
+                    No registered mobile users found in Supabase.
+                  </div>
+                ) : (
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="border-b border-slate-800 text-slate-400 uppercase font-mono text-[10px] bg-slate-950/60">
+                        <th className="py-2.5 px-4">Mobile Number</th>
+                        <th className="py-2.5 px-4">User Details</th>
+                        <th className="py-2.5 px-4">Registered On</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/60">
+                      {(elevenFitData?.networkUsers || [])
+                        .filter((u) => {
+                          if (!abCartSearch) return true;
+                          const q = abCartSearch.toLowerCase();
+                          return u.phone && u.phone.toLowerCase().includes(q);
+                        })
+                        .map((user, idx) => (
+                          <tr key={idx} className="hover:bg-slate-800/40 transition-colors">
+                            <td className="py-2.5 px-4 font-mono font-bold text-emerald-400">
+                              {user.phone}
+                            </td>
+                            <td className="py-2.5 px-4 text-slate-300">
+                              {user.name || user.email || '11FIT Checkout Customer'}
+                            </td>
+                            <td className="py-2.5 px-4 text-slate-400 font-mono text-[11px]">
+                              {user.created_at ? new Date(user.created_at).toLocaleString() : 'N/A'}
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

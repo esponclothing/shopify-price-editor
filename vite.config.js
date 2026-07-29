@@ -2,6 +2,25 @@ import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 
 // https://vitejs.dev/config/
+const apiPlugin = () => ({
+  name: 'api-serverless-plugin',
+  configureServer(server) {
+    server.middlewares.use(async (req, res, next) => {
+      if (req.url.startsWith('/api/11fit-analytics')) {
+        try {
+          const handler = (await import('./api/11fit-analytics.js?t=' + Date.now())).default;
+          return handler(req, res);
+        } catch (e) {
+          console.error('API plugin error:', e);
+          res.statusCode = 500;
+          return res.end(JSON.stringify({ error: e.message }));
+        }
+      }
+      next();
+    });
+  }
+});
+
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
   
@@ -14,7 +33,7 @@ export default defineConfig(({ mode }) => {
   const targetUrl = storeUrl ? `https://${storeUrl}` : 'https://example.myshopify.com';
 
   return {
-    plugins: [react()],
+    plugins: [react(), apiPlugin()],
     server: {
       port: 5173,
       proxy: {
