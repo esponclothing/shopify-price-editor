@@ -2257,6 +2257,8 @@ export default function WhatsAppAIDashboard() {
             <div className="flex-1">
               {(elevenFitData?.abandonedCarts || [])
                 .filter((cart) => {
+                  const pDigits = String(cart.phone || '').replace(/\D/g, '');
+                  if (!cart.phone || cart.phone === 'Unknown' || cart.phone === 'N/A' || pDigits.length < 10) return false;
                   if (!abCartSearch) return true;
                   const q = abCartSearch.toLowerCase();
                   return (
@@ -2277,6 +2279,8 @@ export default function WhatsAppAIDashboard() {
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                   {(elevenFitData?.abandonedCarts || [])
                     .filter((cart) => {
+                      const pDigits = String(cart.phone || '').replace(/\D/g, '');
+                      if (!cart.phone || cart.phone === 'Unknown' || cart.phone === 'N/A' || pDigits.length < 10) return false;
                       if (!abCartSearch) return true;
                       const q = abCartSearch.toLowerCase();
                       return (

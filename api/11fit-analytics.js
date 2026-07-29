@@ -148,6 +148,7 @@ export default async function handler(req, res) {
           : 'Unknown';
 
         const phone10 = get10Digit(rawPhone);
+        if (!phone10 || phone10.length < 10) return;
         const is11fitUser = Boolean(phone10 && userMap[phone10]);
         const isVerified = Boolean(phone10 && verifiedPhonesSet.has(phone10));
         const otpStatus = isVerified
@@ -222,6 +223,7 @@ export default async function handler(req, res) {
         if (!rawPhone && !c.email) return;
 
         const phone10 = get10Digit(rawPhone);
+        if (!phone10 || phone10.length < 10) return;
         const normalizedPhone = rawPhone
           ? (String(rawPhone).startsWith('+') ? String(rawPhone) : `+${rawPhone}`)
           : 'N/A';
