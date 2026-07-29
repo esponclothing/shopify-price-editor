@@ -6,7 +6,7 @@ import {
   Pause, ShieldAlert, BarChart3, Users, ArrowLeft, Check, CheckCheck,
   Bell, BellRing, Camera, StopCircle, Upload, Trash2,
   ShoppingBag, Package, Truck, ExternalLink, ChevronDown, ChevronUp, MapPin, Bot, Save, DollarSign,
-  ShoppingCart, ShieldCheck, UserCheck, Activity
+  ShoppingCart, ShieldCheck, UserCheck, Activity, KeyRound
 } from 'lucide-react';
 
 
