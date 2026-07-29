@@ -1022,7 +1022,6 @@ export default function WhatsAppAIDashboard() {
             title="AI Charts & Logs"
           >
             <BarChart3 className="w-3.5 h-3.5 shrink-0" />
-            <span className="sm:hidden">Logs</span>
             <span className="hidden sm:inline">AI Charts & Logs</span>
           </button>
           <button
@@ -1035,7 +1034,6 @@ export default function WhatsAppAIDashboard() {
             title="AI Instructions & Prompts"
           >
             <Bot className="w-3.5 h-3.5 shrink-0" />
-            <span className="sm:hidden">Prompts</span>
             <span className="hidden sm:inline">AI Instructions & Prompts</span>
           </button>
           <button
@@ -1048,7 +1046,6 @@ export default function WhatsAppAIDashboard() {
             title="11FIT Abandoned Carts (Mobile Only) & OTP"
           >
             <ShoppingCart className="w-3.5 h-3.5 shrink-0" />
-            <span className="sm:hidden">11FIT Carts</span>
             <span className="hidden sm:inline">11FIT Abandoned Carts & OTP</span>
             {elevenFitData?.abandonedCarts?.length > 0 && (
               <span className="ml-1 px-1.5 py-0.5 text-[10px] bg-red-500/20 text-red-400 border border-red-500/30 rounded-full font-extrabold animate-pulse">
@@ -2185,46 +2182,49 @@ export default function WhatsAppAIDashboard() {
 
           {/* Controls Bar: Sub-views & Search */}
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 mb-4 bg-[#0F172A] p-3 rounded-2xl border border-slate-800">
-            <div className="flex items-center gap-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800 overflow-x-auto">
+            <div className="flex flex-wrap sm:flex-nowrap items-center gap-1.5 bg-slate-950 p-1.5 rounded-xl border border-slate-800 w-full sm:w-auto">
               <button
                 onClick={() => setAbCartSubView('carts')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1.5 ${
+                className={`flex-1 sm:flex-initial justify-center px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1.5 ${
                   abCartSubView === 'carts'
                     ? 'bg-emerald-600 text-white shadow'
                     : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
                 <ShoppingCart className="w-3.5 h-3.5" />
-                <span>Abandoned Carts (Mobile Only)</span>
-                <span className="px-1.5 py-0.2 text-[10px] bg-black/30 rounded-full">
+                <span className="sm:hidden">Carts</span>
+                <span className="hidden sm:inline">Abandoned Carts (Mobile Only)</span>
+                <span className="px-1.5 py-0.5 text-[10px] bg-black/30 rounded-full">
                   {elevenFitData?.abandonedCarts?.length || 0}
                 </span>
               </button>
               <button
                 onClick={() => setAbCartSubView('otp_logs')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1.5 ${
+                className={`flex-1 sm:flex-initial justify-center px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1.5 ${
                   abCartSubView === 'otp_logs'
                     ? 'bg-emerald-600 text-white shadow'
                     : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
                 <KeyRound className="w-3.5 h-3.5" />
-                <span>OTP Analytics & SMS Logs</span>
-                <span className="px-1.5 py-0.2 text-[10px] bg-black/30 rounded-full">
+                <span className="sm:hidden">OTP Logs</span>
+                <span className="hidden sm:inline">OTP Analytics & SMS Logs</span>
+                <span className="px-1.5 py-0.5 text-[10px] bg-black/30 rounded-full">
                   {elevenFitData?.otpLogs?.length || 0}
                 </span>
               </button>
               <button
                 onClick={() => setAbCartSubView('users')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1.5 ${
+                className={`flex-1 sm:flex-initial justify-center px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1.5 ${
                   abCartSubView === 'users'
                     ? 'bg-emerald-600 text-white shadow'
                     : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
                 <UserCheck className="w-3.5 h-3.5" />
-                <span>Mobile Network Users</span>
-                <span className="px-1.5 py-0.2 text-[10px] bg-black/30 rounded-full">
+                <span className="sm:hidden">Users</span>
+                <span className="hidden sm:inline">Mobile Network Users</span>
+                <span className="px-1.5 py-0.5 text-[10px] bg-black/30 rounded-full">
                   {elevenFitData?.networkUsers?.length || 0}
                 </span>
               </button>
