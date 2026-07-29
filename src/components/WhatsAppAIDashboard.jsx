@@ -576,7 +576,14 @@ export default function WhatsAppAIDashboard() {
   const fetchElevenFitAnalytics = async (isQuiet = false) => {
     if (!isQuiet) setLoadingElevenFit(true);
     try {
-      const res = await fetch('/api/11fit-analytics');
+      const storeUrl = localStorage.getItem('shopifyStoreUrl') || '';
+      const accessToken = localStorage.getItem('shopifyAccessToken') || '';
+      const res = await fetch('/api/11fit-analytics', {
+        headers: {
+          'x-client-store-url': storeUrl,
+          'x-client-access-token': accessToken
+        }
+      });
       if (res.ok) {
         const data = await res.json();
         if (data.success) {

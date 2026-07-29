@@ -1,5 +1,39 @@
 import axios from 'axios';
 import https from 'https';
+import pg from 'pg';
+const { Client } = pg;
+
+const NFU_DB_URL =
+  process.env.SUPABASE_NFU_DB_URL ||
+  'postgres://postgres:11fit@202612@db.nfubnpgfwgrlpfhcbjlg.supabase.co:5432/postgres';
+
+async function fetchNFUData() {
+  const client = new Client({
+    connectionString: NFU_DB_URL,
+    ssl: { rejectUnauthorized: false }
+  });
+  let otpLogs = [];
+  let networkUsers = [];
+  try {
+    await client.connect();
+    const [resOtp, resUsers] = await Promise.all([
+      client.query('SELECT * FROM otp_logs ORDER BY created_at DESC LIMIT 1000'),
+      client.query('SELECT * FROM network_users ORDER BY created_at DESC LIMIT 1000')
+    ]);
+    otpLogs = resOtp.rows || [];
+    networkUsers = resUsers.rows || [];
+    await client.end();
+  } catch (err) {
+    console.warn('Error fetching from NFU Postgres DB:', err.message);
+    try { await client.end(); } catch (_) {}
+  }
+  return { otpLogs, networkUsers };
+}
+
+const get10Digit = (ph) => {
+  const s = String(ph || '').replace(/\D/g, '');
+  return s.length >= 10 ? s.slice(-10) : s;
+};
 
 export default async function handler(req, res) {
   // CORS Headers
@@ -14,15 +48,7 @@ export default async function handler(req, res) {
     return res.status(200).end();
   }
 
-  // 1. Resolve Supabase credentials
-  const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || 'https://xkiukbebnntjzfilyfmh.supabase.co';
-  const supabaseKey =
-    process.env.SUPABASE_SERVICE_ROLE_KEY ||
-    process.env.SUPABASE_ANON_KEY ||
-    process.env.VITE_SUPABASE_ANON_KEY ||
-    '';
-
-  // 2. Resolve Shopify credentials
+  // Resolve Shopify credentials
   const clientStore = req.headers['x-client-store-url'] || process.env.VITE_SHOPIFY_STORE_URL || process.env.SHOPIFY_STORE_URL || '';
   const clientToken = req.headers['x-client-access-token'] || process.env.VITE_SHOPIFY_ACCESS_TOKEN || process.env.SHOPIFY_ACCESS_TOKEN || '';
 
@@ -32,43 +58,12 @@ export default async function handler(req, res) {
 
   try {
     // -------------------------------------------------------------
-    // A. FETCH OTP ANALYTICS LOGS FROM SUPABASE
+    // A. FETCH OTP LOGS & NETWORK USERS FROM 11FIT POSTGRES DB (NFU)
     // -------------------------------------------------------------
-    let otpLogs = [];
-    try {
-      const otpRes = await fetch(`${supabaseUrl}/rest/v1/otp_analytics?order=created_at.desc&limit=150`, {
-        headers: {
-          'apikey': supabaseKey,
-          'Authorization': `Bearer ${supabaseKey}`
-        }
-      });
-      if (otpRes.ok) {
-        otpLogs = await otpRes.json();
-      }
-    } catch (err) {
-      console.warn('Error fetching otp_analytics:', err.message);
-    }
+    const { otpLogs, networkUsers } = await fetchNFUData();
 
     // -------------------------------------------------------------
-    // B. FETCH NETWORK USERS (11FIT PHONE LOGIN USERS) FROM SUPABASE
-    // -------------------------------------------------------------
-    let networkUsers = [];
-    try {
-      const usersRes = await fetch(`${supabaseUrl}/rest/v1/network_users?order=created_at.desc&limit=150`, {
-        headers: {
-          'apikey': supabaseKey,
-          'Authorization': `Bearer ${supabaseKey}`
-        }
-      });
-      if (usersRes.ok) {
-        networkUsers = await usersRes.json();
-      }
-    } catch (err) {
-      console.warn('Error fetching network_users:', err.message);
-    }
-
-    // -------------------------------------------------------------
-    // C. FETCH ABANDONED CHECKOUTS FROM SHOPIFY
+    // B. FETCH ABANDONED CHECKOUTS FROM SHOPIFY
     // -------------------------------------------------------------
     let checkouts = [];
     try {
@@ -86,37 +81,53 @@ export default async function handler(req, res) {
     }
 
     // -------------------------------------------------------------
-    // D. PROCESS & FILTER FOR MOBILE NUMBERS ONLY ABANDONED CARTS
+    // C. PROCESS & MAP 10-DIGIT PHONES FOR OTP VERIFICATION
     // -------------------------------------------------------------
-    // Map phone numbers from otpLogs for quick lookup
     const otpStatusMap = {};
+    const verifiedPhonesSet = new Set();
+    const allPhonesSet = new Set();
+    let totalOtpSent = 0;
+
     if (Array.isArray(otpLogs)) {
       otpLogs.forEach(log => {
+        totalOtpSent++;
         if (log.phone) {
-          const cleanPhone = String(log.phone).replace(/[^0-9]/g, '');
-          if (!otpStatusMap[cleanPhone]) {
-            otpStatusMap[cleanPhone] = log.status || 'sent';
+          const phone10 = get10Digit(log.phone);
+          if (phone10) {
+            allPhonesSet.add(phone10);
+            const status = String(log.status || '').toLowerCase();
+            if (status === 'verified' || status === 'success') {
+              otpStatusMap[phone10] = 'Verified';
+              verifiedPhonesSet.add(phone10);
+            } else if (!otpStatusMap[phone10]) {
+              otpStatusMap[phone10] = 'Guest / OTP Pending';
+            }
           }
         }
       });
     }
 
-    // Map network users by phone
     const userMap = {};
     if (Array.isArray(networkUsers)) {
       networkUsers.forEach(u => {
         if (u.phone) {
-          const cleanPhone = String(u.phone).replace(/[^0-9]/g, '');
-          userMap[cleanPhone] = u;
+          const phone10 = get10Digit(u.phone);
+          if (phone10) {
+            userMap[phone10] = u;
+            otpStatusMap[phone10] = 'Verified';
+            verifiedPhonesSet.add(phone10);
+            allPhonesSet.add(phone10);
+          }
         }
       });
     }
 
-    // Filter checkouts to include carts with mobile numbers
+    // -------------------------------------------------------------
+    // D. FILTER & ENRICH ABANDONED CHECKOUTS
+    // -------------------------------------------------------------
     const abandonedCarts = [];
     if (Array.isArray(checkouts)) {
       checkouts.forEach(c => {
-        // Try to extract mobile number from any possible field
         let rawPhone =
           c.phone ||
           c.shipping_address?.phone ||
@@ -125,7 +136,6 @@ export default async function handler(req, res) {
           c.customer?.default_address?.phone ||
           '';
 
-        // Check if email happens to be formatted as phone@store
         if (!rawPhone && c.email) {
           const possibleDigits = c.email.split('@')[0].replace(/[^0-9]/g, '');
           if (possibleDigits.length >= 10) {
@@ -133,17 +143,18 @@ export default async function handler(req, res) {
           }
         }
 
-        // We only want abandoned carts where we have a mobile number!
-        if (!rawPhone && !c.email) return; // Skip completely empty
+        if (!rawPhone && !c.email) return;
 
-        const cleanPhone = String(rawPhone || '').replace(/[^0-9]/g, '');
+        const phone10 = get10Digit(rawPhone);
         const normalizedPhone = rawPhone
-          ? (rawPhone.startsWith('+') ? rawPhone : `+${rawPhone}`)
+          ? (String(rawPhone).startsWith('+') ? String(rawPhone) : `+${rawPhone}`)
           : 'N/A';
 
-        // Check if this mobile number has an OTP log or is an 11FIT user
-        const otpStatus = cleanPhone ? (otpStatusMap[cleanPhone] || 'Verified') : 'Unverified';
-        const is11fitUser = Boolean(cleanPhone && userMap[cleanPhone]);
+        const is11fitUser = Boolean(phone10 && userMap[phone10]);
+        const isVerified = Boolean(phone10 && verifiedPhonesSet.has(phone10));
+        const otpStatus = isVerified
+          ? 'Verified'
+          : (phone10 && otpStatusMap[phone10] ? otpStatusMap[phone10] : 'Guest / OTP Pending');
 
         abandonedCarts.push({
           id: c.id || Math.random().toString(36).slice(2),
@@ -163,20 +174,30 @@ export default async function handler(req, res) {
       });
     }
 
-    // Sort abandoned carts by created_at newest first
     abandonedCarts.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
     // -------------------------------------------------------------
-    // E. CALCULATE OTP ANALYTICS METRICS
+    // E. CALCULATE METRICS & FORMAT LOGS FOR FRONTEND
     // -------------------------------------------------------------
-    const totalOtpSent = Array.isArray(otpLogs) ? otpLogs.length : 0;
-    const totalOtpVerified = Array.isArray(otpLogs)
-      ? otpLogs.filter(l => (l.status || '').toLowerCase() === 'verified' || (l.status || '').toLowerCase() === 'success').length
-      : 0;
-    const totalOtpFailed = totalOtpSent - totalOtpVerified;
-    const verificationRate = totalOtpSent > 0
-      ? ((totalOtpVerified / totalOtpSent) * 100).toFixed(1)
-      : '100.0';
+    const totalOtpVerified = verifiedPhonesSet.size;
+    const totalOtpFailed = Math.max(0, totalOtpSent - totalOtpVerified);
+    const verificationRate = allPhonesSet.size > 0
+      ? Math.min(100, Math.round((verifiedPhonesSet.size / allPhonesSet.size) * 100))
+      : 100;
+
+    const formattedOtpLogs = (Array.isArray(otpLogs) ? otpLogs : []).map(log => {
+      const status = String(log.status || '').toLowerCase();
+      return {
+        ...log,
+        event_type: status === 'verified' || status === 'success'
+          ? 'OTP_VERIFIED'
+          : status === 'sent'
+          ? 'OTP_SENT'
+          : status === 'failed'
+          ? 'OTP_FAILED'
+          : 'OTP_' + status.toUpperCase()
+      };
+    });
 
     return res.status(200).json({
       success: true,
@@ -190,7 +211,7 @@ export default async function handler(req, res) {
         activeAbandonedCarts: abandonedCarts.length
       },
       abandonedCarts,
-      otpLogs: Array.isArray(otpLogs) ? otpLogs : [],
+      otpLogs: formattedOtpLogs,
       networkUsers: Array.isArray(networkUsers) ? networkUsers : []
     });
   } catch (error) {
