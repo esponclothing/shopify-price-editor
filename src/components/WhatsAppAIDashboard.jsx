@@ -592,7 +592,11 @@ export default function WhatsAppAIDashboard() {
           if (carts.length > 0) {
             const newestCart = carts[0];
             const lastSeenId = localStorage.getItem('11fit_last_ab_cart_id');
-            if (lastSeenId && lastSeenId !== String(newestCart.id)) {
+            const lastSeenTime = localStorage.getItem('11fit_last_ab_cart_time');
+            const newestTime = new Date(newestCart.created_at || Date.now()).getTime();
+
+            const isNewCart = lastSeenId && (lastSeenId !== String(newestCart.id) || (lastSeenTime && newestTime > Number(lastSeenTime)));
+            if (isNewCart) {
                setNewAbCartNotification({
                  id: newestCart.id,
                  phone: newestCart.phone,
@@ -600,12 +604,24 @@ export default function WhatsAppAIDashboard() {
                  itemsCount: newestCart.line_items?.length || 1,
                  currency: newestCart.currency || 'INR'
                });
+               playCriticalAlertBeep();
                triggerAlertNotification(
                  `🛒 New 11FIT Abandoned Cart!`,
                  `Mobile: ${newestCart.phone} | Amount: ₹${newestCart.total_price}`
                );
+               fetch('/api/webpush', {
+                 method: 'POST',
+                 headers: { 'Content-Type': 'application/json' },
+                 body: JSON.stringify({
+                   action: 'notify',
+                   title: `🛒 New 11FIT Abandoned Cart!`,
+                   body: `Mobile: ${newestCart.phone} | Amount: ₹${newestCart.total_price}`,
+                   data: { url: '/?tab=abandoned' }
+                 })
+               }).catch(() => {});
             }
             localStorage.setItem('11fit_last_ab_cart_id', String(newestCart.id));
+            localStorage.setItem('11fit_last_ab_cart_time', String(newestTime));
           }
         }
       }
@@ -1068,6 +1084,36 @@ export default function WhatsAppAIDashboard() {
           <span className="hidden sm:inline">{notifEnabled ? 'Alerts On' : 'Enable Alerts'}</span>
         </button>
       </div>
+
+      {/* 11FIT NEW ABANDONED CART REAL-TIME NOTIFICATION BANNER */}
+      {newAbCartNotification && (
+        <div className="bg-gradient-to-r from-amber-600 via-red-600 to-emerald-600 text-white px-4 py-2.5 flex items-center justify-between gap-3 shadow-xl z-50 animate-pulse border-b border-amber-400/40">
+          <div className="flex items-center gap-2">
+            <ShoppingCart className="w-5 h-5 shrink-0 animate-bounce" />
+            <span className="text-xs sm:text-sm font-extrabold tracking-wide">
+              🚨 NEW ABANDONED CART ALERT: Customer {newAbCartNotification.phone} just added order worth ₹{newAbCartNotification.price}!
+            </span>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={() => {
+                setActiveSubTab('11fit_abandoned');
+                setAbCartSubView('carts');
+                setNewAbCartNotification(null);
+              }}
+              className="bg-white text-slate-900 px-3 py-1 rounded-lg text-xs font-black hover:bg-slate-100 transition-colors shadow-md"
+            >
+              View Cart
+            </button>
+            <button
+              onClick={() => setNewAbCartNotification(null)}
+              className="text-white/80 hover:text-white font-extrabold px-1.5"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
 {/* ========================================================= */}
       {/* TAB 1: LIVE CHAT INBOX & MANUAL TAKEOVER                  */}
       {/* ========================================================= */}
