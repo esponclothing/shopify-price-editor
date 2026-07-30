@@ -1,0 +1,85 @@
+Created At: 2026-06-23T12:10:54Z
+Completed At: 2026-06-23T12:10:54Z
+File Path: `file:///c:/Users/HP/Desktop/Shopify-Price-Editor/src/components/AutomatedCampaignsDashboard.jsx`
+Total Lines: 379
+Total Bytes: 16120
+Showing lines 1 to 379
+The following code has been modified to include a line number before every line, in the format: <line_number>: <original_line>. Please note that any changes targeting the original code should remove the line number, colon, and leading space.
+1: import React, { useState, useEffect } from 'react';
+2: import axios from 'axios';
+3: import { Megaphone, CheckSquare, AlertCircle, Trash2, Tag, Layers, Search, Plus, X } from 'lucide-react';
+4: 
+5: export default function AutomatedCampaignsDashboard({ products }) {
+6:   const [campaignName, setCampaignName] = useState('');
+7:   const [discountType, setDiscountType] = useState('PERCENTAGE'); // PERCENTAGE or FIXED_AMOUNT
+8:   const [discountValue, setDiscountValue] = useState('');
+9:   const [minQuantity, setMinQuantity] = useState('');
+10:   const [selectedProductIds, setSelectedProductIds] = useState([]);
+11:   
+12:   const [searchTerm, setSearchTerm] = useState('');
+13:   const [loading, setLoading] = useState(false);
+14:   const [error, setError] = useState('');
+15:   const [success, setSuccess] = useState('');
+16:   
+17:   const [activeCampaigns, setActiveCampaigns] = useState([]);
+18:   const [fetchingCampaigns, setFetchingCampaigns] = useState(false);
+19: 
+20:   useEffect(() => {
+21:     fetchActiveCampaigns();
+22:   }, []);
+23: 
+24:   const fetchActiveCampaigns = async () => {
+25:     setFetchingCampaigns(true);
+26:     try {
+27:       const query = `
+28:         query {
+29:           discountNodes(first: 50, query: "status:ACTIVE") {
+30:             edges {
+31:               node {
+32:                 id
+33:                 discount {
+34:                   ... on DiscountAutomaticBasic {
+35:                     title
+36:                     status
+37:                     summary
+38:                   }
+39:                 }
+40:      
+<truncated 14372 bytes>
+ame="flex flex-col items-center justify-center py-10 text-slate-400">
+345:               <div className="w-8 h-8 border-4 border-yellow-500 border-t-transparent rounded-full animate-spin mb-3"></div>
+346:               <p className="font-semibold text-xs">Loading active campaigns...</p>
+347:             </div>
+348:           ) : activeCampaigns.length === 0 ? (
+349:             <div className="text-center py-10 text-slate-500 border border-dashed border-slate-700 rounded-xl">
+350:               <Tag className="w-8 h-8 mx-auto mb-2 opacity-50" />
+351:               <p className="text-xs font-medium">No automated campaigns found.</p>
+352:             </div>
+353:           ) : (
+354:             <div className="space-y-3">
+355:               {activeCampaigns.map(camp => (
+356:                 <div key={camp.id} className="bg-[#0F172A] border border-slate-800 rounded-xl p-4 flex items-center justify-between group hover:border-slate-600 transition-colors">
+357:                   <div>
+358:                     <h4 className="text-sm font-bold text-white mb-1">{camp.title.replace('CAMP_', '').replace(/_\d+$/, '')}</h4>
+359:                     <p className="text-[10px] text-emerald-400 font-semibold">{camp.summary}</p>
+360:                     <p className="text-[9px] text-slate-500 mt-1 font-mono">{camp.title}</p>
+361:                   </div>
+362:                   <button
+363:                     onClick={() => handleDeleteCampaign(camp)}
+364:                     disabled={loading}
+365:                     className="p-2 text-slate-400 hover:text-red-400 hover:bg-red-950/30 rounded-lg transition-all shrink-0"
+366:                     title="Delete Campaign"
+367:                   >
+368:                     <Trash2 className="w-4 h-4" />
+369:                   </button>
+370:                 </div>
+371:               ))}
+372:             </div>
+373:           )}
+374:         </div>
+375:       </div>
+376:     </div>
+377:   );
+378: }
+379: 
+The above content shows the entire, complete file contents of the requested file.

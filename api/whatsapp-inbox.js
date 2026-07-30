@@ -278,8 +278,8 @@ export default async function handler(req, res) {
       }
     }
 
-    // 3B. Send Manual Message via WhatsApp Graph API
-    if (postAction === 'send_message') {
+    // 3B. Send Manual Message or Template via WhatsApp Graph API
+    if (postAction === 'send_message' || postAction === 'send_template') {
       let token = process.env.WHATSAPP_TOKEN;
       try {
         const settingsRes = await axios.get(
@@ -352,7 +352,7 @@ export default async function handler(req, res) {
         });
 
         // Save manual reply to chat memory
-        const displayContent = type === 'template'
+        const displayContent = (type === 'template' || postAction === 'send_template')
           ? `[TEMPLATE SENT: ${template_name}]`
           : type === 'image'
           ? `[IMAGE] ${text || media_url}`

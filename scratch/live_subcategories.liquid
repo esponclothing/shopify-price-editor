@@ -1,0 +1,209 @@
+{%- style -%}
+.collection-subcategories {
+  margin-bottom: 2rem;
+  margin-top: 1rem;
+}
+.subcategories-list {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 1rem;
+  list-style: none;
+  padding: 0 1.5rem;
+  margin: 0;
+  overflow-x: auto;
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none;  /* IE and Edge */
+}
+.subcategories-list::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, Opera */
+}
+.subcategory-item {
+  flex-shrink: 0;
+}
+.subcategory-link {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem; /* Space between icon and text */
+  padding: 8px 18px;
+  border: 1px solid rgba(var(--color-foreground), 0.15);
+  border-radius: 30px; /* Slightly rounder for a luxury pill shape */
+  text-decoration: none;
+  color: rgb(var(--color-foreground));
+  background-color: rgb(var(--color-background));
+  font-size: 1.4rem;
+  transition: all 0.3s ease;
+  font-weight: 500;
+}
+.subcategory-link:hover,
+.subcategory-link.active {
+  background-color: rgb(var(--color-foreground));
+  color: rgb(var(--color-background));
+  border-color: rgb(var(--color-foreground));
+}
+
+/* Icon Styling */
+.subcategory-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.4rem;
+  height: 1.4rem;
+  transition: transform 0.3s ease;
+}
+.subcategory-link:hover .subcategory-icon {
+  transform: scale(1.1); /* Subtle zoom on hover */
+}
+.subcategory-icon svg {
+  width: 100%;
+  height: 100%;
+  fill: currentColor; /* Ensures SVG changes color on hover/active */
+}
+.subcategory-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+{%- endstyle -%}
+
+{%- assign current_handle = collection.handle -%}
+{%- assign parent_handle = current_handle -%}
+{%- assign is_all_page = false -%}
+
+{%- if current_handle == 'all' -%}
+  {%- assign is_all_page = true -%}
+{%- endif -%}
+
+{%- comment -%}
+  Find the parent handle dynamically by checking against the list of known parent handles
+{%- endcomment -%}
+{%- assign main_handles_str = "t-shirts,trackpants,swimwear,shorts,joggers,accessories" -%}
+{%- assign main_handles = main_handles_str | split: "," -%}
+
+{%- unless is_all_page -%}
+  {%- for main_handle in main_handles -%}
+    {%- assign handle_prefix = main_handle | append: "-" -%}
+    {%- if current_handle == main_handle -%}
+      {%- assign parent_handle = main_handle -%}
+      {%- break -%}
+    {%- elsif current_handle contains handle_prefix -%}
+      {%- assign parent_handle = main_handle -%}
+      {%- break -%}
+    {%- endif -%}
+  {%- endfor -%}
+{%- endunless -%}
+
+{%- assign parent_col = collections[parent_handle] -%}
+
+{%- capture subcategories_html -%}
+  {%- assign subcategories = parent_col.metafields.price_editor.subcategories.value -%}
+  {%- for sub in subcategories -%}
+    {%- assign suffix = sub.suffix | downcase | replace: " ", "-" -%}
+    {%- if suffix == blank %}{% continue %}{% endif -%}
+    
+    {%- assign sub_handle = parent_handle | append: "-" | append: suffix -%}
+    {%- assign sub_col = collections[sub_handle] -%}
+    
+    {%- if sub_col and sub_col.title != blank -%}
+      {%- assign display_title = sub_col.title | split: "-" | last | strip -%}
+      <li class="subcategory-item">
+        <a href="{{ sub_col.url }}" class="subcategory-link {% if current_handle == sub_handle %}active{% endif %}">
+          
+          {%- comment -%} Render Icon {%- endcomment -%}
+          {%- if sub.custom_icon_asset != blank -%}
+            <span class="subcategory-icon">
+              <img src="{{ sub.custom_icon_asset | asset_url }}" loading="lazy" />
+            </span>
+          {%- elsif sub.icon_image != blank -%}
+            <span class="subcategory-icon">
+              <img src="{{ sub.icon_image }}" loading="lazy" />
+            </span>
+          {%- endif -%}
+
+          <span class="subcategory-text">{{ display_title }}</span>
+        </a>
+      </li>
+    {%- endif -%}
+  {%- endfor -%}
+{%- endcapture -%}
+
+{%- if is_all_page -%}
+  <div class="collection-subcategories page-width">
+    <ul class="subcategories-list">
+      <li class="subcategory-item">
+        <a href="/collections/all" class="subcategory-link active">
+          {%- if section.settings.all_icon_svg != blank or section.settings.all_icon_image != blank -%}
+            <span class="subcategory-icon">
+              {%- if section.settings.all_icon_svg != blank -%}
+                {{ section.settings.all_icon_svg }}
+              {%- else -%}
+                {{ section.settings.all_icon_image | image_url: width: 40 | image_tag: loading: 'lazy' }}
+              {%- endif -%}
+            </span>
+          {%- endif -%}
+          <span class="subcategory-text">All</span>
+        </a>
+      </li>
+      {%- for handle in main_handles -%}
+        {%- assign main_col = collections[handle] -%}
+        {%- if main_col and main_col.title != blank -%}
+          <li class="subcategory-item">
+            <a href="{{ main_col.url }}" class="subcategory-link">
+              {%- if main_col.image != blank -%}
+                <span class="subcategory-icon">
+                  <img src="{{ main_col.image | image_url: width: 40 }}" loading="lazy" />
+                </span>
+              {%- endif -%}
+              <span class="subcategory-text">{{ main_col.title }}</span>
+            </a>
+          </li>
+        {%- endif -%}
+      {%- endfor -%}
+    </ul>
+  </div>
+{%- elsif parent_col -%}
+  <div class="collection-subcategories page-width">
+    <ul class="subcategories-list">
+      
+      {%- comment -%} "All" Button {%- endcomment -%}
+      <li class="subcategory-item">
+        <a href="{{ parent_col.url }}" class="subcategory-link {% if current_handle == parent_handle %}active{% endif %}">
+          {%- if section.settings.all_icon_svg != blank or section.settings.all_icon_image != blank -%}
+            <span class="subcategory-icon">
+              {%- if section.settings.all_icon_svg != blank -%}
+                {{ section.settings.all_icon_svg }}
+              {%- else -%}
+                {{ section.settings.all_icon_image | image_url: width: 40 | image_tag: loading: 'lazy' }}
+              {%- endif -%}
+            </span>
+          {%- endif -%}
+          <span class="subcategory-text">All</span>
+        </a>
+      </li>
+      
+      {{ subcategories_html }}
+    </ul>
+  </div>
+{%- endif -%}
+
+{% schema %}
+{
+  "name": "Collection Subcategories",
+  "settings": [
+    {
+      "type": "header",
+      "content": "Settings for the 'All' Button"
+    },
+    {
+      "type": "html",
+      "id": "all_icon_svg",
+      "label": "Icon (SVG Code)",
+      "info": "Paste raw SVG code for crisp, scalable icons."
+    },
+    {
+      "type": "image_picker",
+      "id": "all_icon_image",
+      "label": "Icon (Image Fallback)"
+    }
+  ]
+}
+{% endschema %}

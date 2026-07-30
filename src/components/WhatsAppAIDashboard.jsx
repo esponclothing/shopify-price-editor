@@ -106,6 +106,13 @@ export default function WhatsAppAIDashboard() {
   const [expandedOrderId, setExpandedOrderId] = useState(null);
   const [sendingOrderAction, setSendingOrderAction] = useState(null);
 
+  // --- DYNAMIC TEMPLATES & WORKFLOWS ---
+  const [metaTemplates, setMetaTemplates] = useState([]);
+  const [workflows, setWorkflows] = useState({
+    abandoned_cart: true, order_placed: true, order_shipped: true, out_for_delivery: true, order_delivered: true
+  });
+  const [savingWorkflows, setSavingWorkflows] = useState(false);
+
   // --- ORDERS SUMMARY & FILTER STATES ---
   const [ordersSummaryMap, setOrdersSummaryMap] = useState({});
   const [inboxOrderFilter, setInboxOrderFilter] = useState('all');
@@ -518,7 +525,8 @@ export default function WhatsAppAIDashboard() {
       }
     } else {
       // 24hr window CLOSED — send as WhatsApp template
-      const tplId = actionType === 'shipping' ? 'order_shipped_v1' : 'order_confirm_prepaid_v1';
+      // order_shipped_v1 has a hardcoded URL on Meta, so we use order_status_check_v1 which supports a dynamic tracking link in the body
+      const tplId = actionType === 'shipping' ? 'order_status_check_v1' : 'order_confirm_prepaid_v1';
       const autoParams = getAutoParams(tplId, chatForPhone, customerOrders, []);
       const tplDef = templatesList.find(t => t.id === tplId);
       const paramString = autoParams.map((v,i) => `${tplDef?.params?.[i] || `{{${i+1}}}`}: ${v}`).join('\n');
@@ -550,6 +558,22 @@ export default function WhatsAppAIDashboard() {
     setSendingOrderAction(null);
   };
 
+  // --- FETCH ACTIVE CHAT ORDERS IN BACKGROUND FOR TEMPLATES ---
+  useEffect(() => {
+    if (selectedChat?.phone) {
+      const cleanDigits = selectedChat.phone.replace(/\D/g, '');
+      const last10 = cleanDigits.slice(-10);
+      fetch(`/api/shopify-customer-orders?phone=${encodeURIComponent(last10)}`)
+        .then(res => res.json())
+        .then(data => {
+          let ordersList = data.orders || [];
+          ordersList.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+          setCustomerOrders(ordersList);
+        })
+        .catch(() => {});
+    }
+  }, [selectedChat?.phone]);
+
   // --- PERSIST BELL STATE + REGISTER SERVICE WORKER ---
   useEffect(() => {
     try { localStorage.setItem('11fit_notif_enabled', notifEnabled ? 'true' : 'false'); } catch {}
@@ -576,8 +600,43 @@ export default function WhatsAppAIDashboard() {
         setInstSizeAdvisor(data.inst_size_advisor || '');
         setInstBrandPolicies(data.inst_brand_policies || '');
         setInstCustom(data.inst_custom || '');
+        if (data.workflows) setWorkflows(data.workflows);
       }
     } catch (_) {}
+  };
+
+  const fetchMetaTemplates = async () => {
+    try {
+      const res = await fetch('/api/whatsapp-templates');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.templates) {
+          // Filter to only APPROVED templates
+          setMetaTemplates(data.templates.filter(t => t.status === 'APPROVED'));
+        }
+      }
+    } catch (_) {}
+  };
+
+  const handleSaveWorkflows = async () => {
+    setSavingWorkflows(true);
+    try {
+      const res = await fetch('/api/whatsapp-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workflows })
+      });
+      const data = await res.json();
+      if (res.ok && data?.success) {
+        alert('✅ Automated Workflows updated!');
+      } else {
+        alert('❌ Failed to save workflows: ' + (data?.error || 'Unknown error'));
+      }
+    } catch (e) {
+      alert('❌ Network error saving workflows');
+    } finally {
+      setSavingWorkflows(false);
+    }
   };
 
   const handleSaveInstructions = async () => {
@@ -659,8 +718,10 @@ export default function WhatsAppAIDashboard() {
 
   const handleSendAbCartRecovery = async (cart) => {
     if (!cart || !cart.phone) return;
-    const name = cart.customer_name?.split(' ')?.[0] || 'there';
-    const amount = (parseFloat(cart.cart_details?.total_price || cart.total_price || 0) / (String(cart.cart_details?.total_price || '').includes('.') ? 1 : 100)).toFixed(2);
+    const rawName = cart.customer_name || cart.cart_details?.customer?.first_name || cart.cart_details?.shipping_address?.first_name || 'there';
+    const name = rawName.split(' ')[0];
+    const amountVal = cart.cart_details?.total_price || cart.total_price || 0;
+    const amount = (parseFloat(amountVal) / (String(amountVal).includes('.') ? 1 : 100)).toFixed(2);
 
     const confirmed = window.confirm(`Send "Abandoned Cart Recovery" template to ${cart.phone}?\n\nCustomer: ${name}\nAmount: ₹${amount}`);
     if (!confirmed) return;
@@ -692,6 +753,7 @@ export default function WhatsAppAIDashboard() {
     fetchChats(false);
     fetchExecutions(false);
     fetchInstructions();
+    fetchMetaTemplates();
     fetchElevenFitAnalytics(false);
     const interval = setInterval(() => {
       fetchChats(true);
@@ -956,23 +1018,32 @@ export default function WhatsAppAIDashboard() {
     return p.startsWith('+') ? p : `+${p}`;
   };
 
-  // Real Meta-approved templates with correct parameter mapping
-  const templatesList = [
-    { id: 'abandoned_cart_v2',           label: '🛒 Abandoned Cart Recovery',         category: 'MARKETING', params: ['Customer Name', 'Cart Value (₹)'] },
-    { id: 'combo_offer_reengage_v2',     label: '🛍️ Special Combo Offer',             category: 'MARKETING', params: ['Customer Name'] },
-    { id: 'order_status_check_v1',       label: 'ℹ️ Order Status Check',              category: 'UTILITY',   params: ['Name', 'Order #', 'Status', 'Details/Tracking'] },
-    { id: 'order_confirm_prepaid_v1',    label: '✅ Order Confirmed (Prepaid)',        category: 'UTILITY',   params: ['Name', 'Order #', 'Items', 'Amount Paid (₹)', 'Address'] },
-    { id: 'order_confirmation_cod_v1',   label: '💵 Order Confirmed (COD)',           category: 'UTILITY',   params: ['Name', 'Order #', 'Items', 'Amount Payable (₹)', 'Address'] },
-    { id: 'order_confirm_partial_v1',    label: '🪙 Order Confirmed (Advance/Partial)',category: 'UTILITY',   params: ['Name', 'Order #', 'Items', 'Advance Paid (₹)', 'Balance Due (₹)', 'Address'] },
-    { id: 'order_shipped_v1',            label: '🚚 Order Shipped',                   category: 'UTILITY',   params: ['Name', 'Order #', 'Courier', 'Tracking #'] },
-    { id: 'out_for_delivery_prepaid_v1', label: '🏠 Out For Delivery (Prepaid)',      category: 'UTILITY',   params: ['Name', 'Order #'] },
-    { id: 'out_for_delivery_cod_v1',     label: '🏠 Out For Delivery (COD)',          category: 'UTILITY',   params: ['Name', 'Order #', 'Amount to Collect (₹)'] },
-    { id: 'order_delivered_confirm_v1',  label: '🎉 Order Delivered',                 category: 'UTILITY',   params: ['Name', 'Order #'] },
-  ];
+  const KNOWN_TEMPLATES = {
+    'abandoned_cart_v2':           { label: '🛒 Abandoned Cart Recovery',         params: ['Customer Name', 'Cart Value (₹)'] },
+    'combo_offer_reengage_v2':     { label: '🛍️ Special Combo Offer',             params: ['Customer Name'] },
+    'order_status_check_v1':       { label: 'ℹ️ Order Status Check',              params: ['Name', 'Order #', 'Status', 'Details/Tracking'] },
+    'order_confirm_prepaid_v1':    { label: '✅ Order Confirmed (Prepaid)',        params: ['Name', 'Order #', 'Items', 'Amount Paid (₹)', 'Address'] },
+    'order_confirmation_cod_v1':   { label: '💵 Order Confirmed (COD)',           params: ['Name', 'Order #', 'Items', 'Amount Payable (₹)', 'Address'] },
+    'order_confirm_partial_v1':    { label: '🪙 Order Confirmed (Advance/Partial)',params: ['Name', 'Order #', 'Items', 'Advance Paid (₹)', 'Balance Due (₹)', 'Address'] },
+    'order_shipped_v1':            { label: '🚚 Order Shipped',                   params: ['Name', 'Order #', 'Courier', 'Tracking #'] },
+    'out_for_delivery_prepaid_v1': { label: '🏠 Out For Delivery (Prepaid)',      params: ['Name', 'Order #'] },
+    'out_for_delivery_cod_v1':     { label: '🏠 Out For Delivery (COD)',          params: ['Name', 'Order #', 'Amount to Collect (₹)'] },
+    'order_delivered_confirm_v1':  { label: '🎉 Order Delivered',                 params: ['Name', 'Order #'] },
+  };
+
+  const templatesList = metaTemplates.map(t => ({
+    id: t.name,
+    label: KNOWN_TEMPLATES[t.name]?.label || `🔹 ${t.name.replace(/_/g, ' ')}`,
+    category: t.category,
+    params: KNOWN_TEMPLATES[t.name]?.params || (
+      t.components.find(c => c.type === 'BODY')?.example?.body_text?.[0] || []
+    ).map((_, i) => `Param ${i + 1}`)
+  }));
 
   // Smart template param values - auto-filled from customer order/cart context
   const getAutoParams = (templateId, chat, orders, carts) => {
-    const name = chat?.customer_name?.split(' ')?.[0] || 'Customer';
+    const rawName = chat?.customer_name || orders?.[0]?.shipping_address?.first_name || carts?.[0]?.cart_details?.customer?.first_name || carts?.[0]?.cart_details?.shipping_address?.first_name || 'Customer';
+    const name = rawName.split(' ')[0];
     const latestOrder = orders?.[0];
     const latestCart = carts?.[0];
     const orderName = latestOrder?.name || '';
@@ -985,7 +1056,8 @@ export default function WhatsAppAIDashboard() {
       return `${i.title}${v} x${i.quantity}`;
     }).join(', ');
     const fulfillment = latestOrder?.fulfillments?.[0];
-    const cartAmount = latestCart ? (parseFloat(latestCart.cart_details?.total_price || latestCart.amount || 0) / (String(latestCart.cart_details?.total_price || '').includes('.') ? 1 : 100)).toFixed(2) : '0';
+    const cartVal = latestCart?.cart_details?.total_price || latestCart?.amount || latestCart?.total_price || 0;
+    const cartAmount = latestCart ? (parseFloat(cartVal) / (String(cartVal).includes('.') ? 1 : 100)).toFixed(2) : '0';
 
     switch (templateId) {
       case 'abandoned_cart_v2':           return [name, cartAmount];
@@ -1002,9 +1074,13 @@ export default function WhatsAppAIDashboard() {
       case 'order_confirm_partial_v1':    return [name, orderName, itemsText, (parseFloat(totalPrice)*0.1).toFixed(2), (parseFloat(totalPrice)*0.9).toFixed(2), address];
       case 'order_shipped_v1':            return [name, orderName, fulfillment?.tracking_company || 'Courier', fulfillment?.tracking_number || ''];
       case 'out_for_delivery_prepaid_v1': return [name, orderName];
-      case 'out_for_delivery_cod_v1':     return [name, orderName, totalPrice];
+      case 'out_for_delivery_cod_v1':     return [name, orderName, (totalPrice - (latestOrder?.total_discounts||0)).toFixed(2)];
       case 'order_delivered_confirm_v1':  return [name, orderName];
-      default: return [];
+      default: {
+        const bodyComp = (metaTemplates.find(t => t.name === templateId)?.components || []).find(c => c.type === 'BODY');
+        const numParams = bodyComp?.example?.body_text?.[0]?.length || 0;
+        return Array(numParams).fill(name);
+      }
     }
   };
 
@@ -1162,6 +1238,18 @@ export default function WhatsAppAIDashboard() {
           >
             <FileText className="w-3.5 h-3.5 shrink-0" />
             <span className="hidden sm:inline">Meta Templates</span>
+          </button>
+          <button
+            onClick={() => setActiveSubTab('workflows')}
+            className={`flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 ${
+              activeSubTab === 'workflows'
+                ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/30'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+            }`}
+            title="Automated Workflows"
+          >
+            <Activity className="w-3.5 h-3.5 shrink-0" />
+            <span className="hidden sm:inline">Automated Workflows</span>
           </button>
         </div>
 
@@ -2673,6 +2761,71 @@ export default function WhatsAppAIDashboard() {
       {/* --- META WHATSAPP TEMPLATES MANAGER TAB --- */}
       {activeSubTab === 'meta_templates' && (
         <MetaTemplatesManager />
+      )}
+
+      {/* --- AUTOMATED WORKFLOWS TAB --- */}
+      {activeSubTab === 'workflows' && (
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-slate-950">
+          <div className="max-w-4xl mx-auto space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <h2 className="text-xl font-black text-white flex items-center gap-2">
+                  <Activity className="w-6 h-6 text-emerald-400" />
+                  Automated Trigger Workflows
+                </h2>
+                <p className="text-sm text-slate-400 mt-1">Enable or disable automatic WhatsApp messages sent to customers based on Shopify events.</p>
+              </div>
+              <button
+                onClick={handleSaveWorkflows}
+                disabled={savingWorkflows}
+                className="flex items-center justify-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold rounded-xl transition-all shadow-md shrink-0"
+              >
+                {savingWorkflows ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                Save Workflows
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Trigger Toggle Item */}
+              {[
+                { id: 'abandoned_cart', title: '🛒 Abandoned Cart Recovery', desc: 'Sends an automatic message with a cart link 1 hour after abandonment.' },
+                { id: 'order_placed', title: '✅ Order Placed (Prepaid & COD)', desc: 'Sends an instant confirmation when a customer places an order.' },
+                { id: 'order_shipped', title: '🚚 Order Shipped', desc: 'Sends tracking details as soon as the order is fulfilled.' },
+                { id: 'out_for_delivery', title: '🏠 Out for Delivery', desc: 'Alerts the customer that their package is arriving today.' },
+                { id: 'order_delivered', title: '🎉 Order Delivered', desc: 'Sends a thank you message asking for a review or showing combo offers.' }
+              ].map(trigger => (
+                <div key={trigger.id} className="bg-slate-900 border border-slate-800 p-5 rounded-2xl flex flex-col justify-between hover:border-slate-700 transition-colors">
+                  <div className="flex items-start justify-between gap-4 mb-4">
+                    <div>
+                      <h3 className="text-white font-bold text-base">{trigger.title}</h3>
+                      <p className="text-slate-400 text-xs mt-1 leading-relaxed">{trigger.desc}</p>
+                    </div>
+                    {/* Toggle Switch */}
+                    <label className="relative inline-flex items-center cursor-pointer shrink-0 mt-1">
+                      <input 
+                        type="checkbox" 
+                        className="sr-only peer" 
+                        checked={workflows[trigger.id] !== false}
+                        onChange={(e) => setWorkflows(prev => ({ ...prev, [trigger.id]: e.target.checked }))}
+                      />
+                      <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
+                    </label>
+                  </div>
+                  <div className="text-[10px] uppercase font-bold tracking-wider text-slate-500 bg-slate-800/50 w-fit px-2 py-1 rounded-md">
+                    Trigger: <span className="text-emerald-400">{trigger.id}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+            
+            <div className="bg-blue-900/20 border border-blue-800/40 p-4 rounded-xl flex items-start gap-3 mt-4">
+              <ShieldAlert className="w-5 h-5 text-blue-400 shrink-0 mt-0.5" />
+              <p className="text-xs text-blue-200">
+                <strong>How are templates mapped?</strong> The automated backend system matches the triggers above to the active Meta templates with the corresponding `_v1` or `_v2` labels. Make sure you don't delete standard templates without creating a replacement.
+              </p>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* CUSTOMER ORDERS MODAL / DRAWER (MOBILE BOTTOM SHEET + DESKTOP MODAL) */}
