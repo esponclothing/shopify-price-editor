@@ -666,7 +666,7 @@ ${instSizeAdvisor || `- Jab customer height, weight, waist, ya size ke baare mei
 
 === 🏆 11FIT BRAND & POLICIES (www.11fit.in) ===
 ${instBrandPolicies || `- Oversized Tees & Track Pants: Combed cotton & 4-Way Lycra. Check swipe Size Guide on 11fit.in!
-- Shipping: 3-5 business days across India. COD & Prepaid available. 7-Day Return/Exchange policy.`}${instCustom ? `\n\n=== ⭐ CUSTOM AI INSTRUCTIONS ===\n` + instCustom : ''}`;
+- Shipping: 3-5 business days across India. COD & Prepaid available. 7-Day Return/Exchange policy.`}${instCustom ? `\n\n=== ⭐ CUSTOM AI INSTRUCTIONS ===\n` + instCustom : ''}
 
 RECENT CONVERSATION HISTORY:
 ${history}
@@ -675,7 +675,7 @@ TOOLS DATA:
 ${toolContext}
 
 CUSTOMER NEW MESSAGE:
-${userText}`;
+${userText}\`;
 
       // === FALLBACK MODEL CHAIN: Try 3 models in order ===
       // 1. llama-3.3-70b-versatile (best quality, ~300ms)
