@@ -675,7 +675,7 @@ TOOLS DATA:
 ${toolContext}
 
 CUSTOMER NEW MESSAGE:
-${userText}\`;
+${userText}`;
 
       // === FALLBACK MODEL CHAIN: Try 3 models in order ===
       // 1. llama-3.3-70b-versatile (best quality, ~300ms)
