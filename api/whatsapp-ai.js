@@ -387,7 +387,7 @@ function recommendSize(userText) {
 
 // Send WhatsApp Reply via Meta Graph API
 async function sendWhatsAppMessage(toPhone, textBody) {
-  let token = process.env.WHATSAPP_TOKEN;
+  let token = process.env.WHATSAPP_TOKEN || 'EAAM99yhroGsBSGl4Hqpz75Axd5ZAWUF2wVNOMx0yIJCeEehWE7Dwe8qAaFckBDIw95JmL0rHwBK9rgUp9eA6jBdTZB5NBNLpGcu4mmXcvJ1AasaXmfpoTg2fZAZCjOescX0lUM4KDDZCgT8KQI7ZBw9PpuXMz8oCsI4Xh5BCQgiyhRSQBEPrOWZBQnVEIqBngZDZD';
   try {
     const settingsRes = await axios.get(
       `${SUPABASE_URL}/rest/v1/whatsapp_settings?select=whatsapp_token&order=id.desc&limit=1`,

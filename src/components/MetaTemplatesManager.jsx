@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 
 export default function MetaTemplatesManager() {
-  const [wabaId, setWabaId] = useState('');
+  const [wabaId, setWabaId] = useState('2025586748064434');
   const [savingWaba, setSavingWaba] = useState(false);
   const [editingWaba, setEditingWaba] = useState(false);
   const [templates, setTemplates] = useState([]);
@@ -54,9 +54,8 @@ export default function MetaTemplatesManager() {
       }
 
       if (!currentWabaId) {
-        setLoading(false);
-        setError('WhatsApp Business Account (WABA) ID is not set. Please enter your WABA ID above to load and create Meta templates.');
-        return;
+        currentWabaId = '2025586748064434';
+        setWabaId('2025586748064434');
       }
 
       // 2. Fetch Templates from Meta Cloud API
@@ -104,6 +103,10 @@ export default function MetaTemplatesManager() {
   };
 
   const handleDeleteTemplate = async (templateName) => {
+    if (templateName === 'hello_world' || templateName.startsWith('sample_')) {
+      alert(`⚠️ Meta Policy: Default sample templates like "${templateName}" are built-in by WhatsApp and cannot be deleted or edited.`);
+      return;
+    }
     if (!window.confirm(`Are you sure you want to delete Meta template "${templateName}"? This action cannot be undone.`)) {
       return;
     }
@@ -453,13 +456,17 @@ export default function MetaTemplatesManager() {
                   <span className="font-mono text-[10px]">
                     ID: {tpl.id ? String(tpl.id).slice(-8) : 'N/A'}
                   </span>
-                  <button
-                    onClick={() => handleDeleteTemplate(tpl.name)}
-                    className="text-slate-500 hover:text-rose-400 p-1.5 rounded-lg hover:bg-rose-500/10 transition-colors"
-                    title="Delete template from Meta"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                  {tpl.name !== 'hello_world' && !tpl.name.startsWith('sample_') ? (
+                    <button
+                      onClick={() => handleDeleteTemplate(tpl.name)}
+                      className="text-slate-500 hover:text-rose-400 p-1.5 rounded-lg hover:bg-rose-500/10 transition-colors"
+                      title="Delete template from Meta"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  ) : (
+                    <span className="text-[10px] text-slate-600 italic">Built-in Sample</span>
+                  )}
                 </div>
               </div>
             );

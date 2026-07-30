@@ -64,7 +64,7 @@ export default async function handler(req, res) {
     // 3. Query latest abandoned checkouts from checkout_sessions
     const sessionsRes = await client.query(`
       SELECT * FROM checkout_sessions 
-      WHERE status = 'abandoned'
+      WHERE status = 'abandoned' AND created_at < NOW() - INTERVAL '5 minutes'
       ORDER BY created_at DESC 
       LIMIT 25;
     `);
@@ -94,6 +94,8 @@ export default async function handler(req, res) {
 
     // 4. Check for newly added checkouts not in notified_abandoned_carts
     const newCartsToNotify = [];
+    const notifiedPhonesInThisRun = new Set();
+
     for (const s of sessions) {
       const sid = String(s.id || s.cart_details?.token || '');
       if (!sid) continue;
@@ -101,8 +103,18 @@ export default async function handler(req, res) {
       const phone10 = get10Digit(rawPhone);
       if (!phone10 || phone10.length < 10) continue;
 
-      const checkRes = await client.query('SELECT id FROM notified_abandoned_carts WHERE id = $1', [sid]);
+      // Skip if we already added a notification for this phone number in this loop
+      if (notifiedPhonesInThisRun.has(phone10)) continue;
+
+      // Check if this session ID OR this phone number was already notified within the last 24 hours
+      const checkRes = await client.query(
+        `SELECT id FROM notified_abandoned_carts 
+         WHERE id = $1 OR (phone LIKE '%' || $2 || '%' AND notified_at > NOW() - INTERVAL '24 hours')`,
+        [sid, phone10]
+      );
       if (checkRes.rows.length === 0) {
+        notifiedPhonesInThisRun.add(phone10);
+
         let priceVal = s.cart_details?.total_price || s.cart_details?.items_subtotal_price || s.amount || 0;
         let numPrice = Number(priceVal);
         let formattedPrice = '0.00';
@@ -115,7 +127,8 @@ export default async function handler(req, res) {
         newCartsToNotify.push({
           id: sid,
           phone: rawPhone.startsWith('+') ? rawPhone : `+${rawPhone}`,
-          amount: formattedPrice
+          amount: formattedPrice,
+          first_name: (s.cart_details?.customer?.first_name || s.cart_details?.shipping_address?.first_name || '').trim() || 'there'
         });
 
         // Record in table so we only notify once
@@ -128,9 +141,30 @@ export default async function handler(req, res) {
 
     await client.end();
 
-    // 5. Send Web Push to all subscribers for each new abandoned cart
+    // -----------------------------------------------------------------------
+    // 5. For each new cart: send WhatsApp template + Web Push admin notification
+    // -----------------------------------------------------------------------
     let notifResults = [];
+
     if (newCartsToNotify.length > 0) {
+      // Fetch WA settings (token, phone_number_id) from Supabase
+      let waToken = null;
+      let workflows = { abandoned_cart: true };
+      try {
+        const settingsRes = await axios.get(
+          `${SUPABASE_URL}/rest/v1/whatsapp_settings?select=whatsapp_token,workflows&order=id.desc&limit=1`,
+          { headers: supabaseHeaders }
+        );
+        const row = settingsRes.data?.[0] || {};
+        waToken = row.whatsapp_token || null;
+        workflows = row.workflows || { abandoned_cart: true };
+      } catch (err) {
+        console.warn('Could not load WA settings for cron:', err.message);
+      }
+
+      const WA_PHONE_ID = '1189183190949431'; // 11FIT verified +91 74949 61428
+
+      // Fetch push subscriptions for admin notification
       let subs = [];
       try {
         const subRes = await axios.get(
@@ -143,9 +177,58 @@ export default async function handler(req, res) {
       }
 
       for (const cart of newCartsToNotify) {
-        const payload = JSON.stringify({
+        const cartResult = { id: cart.id, phone: cart.phone, waSent: false, waError: null, pushSent: 0 };
+
+        // --- A. Send WhatsApp abandoned_cart_v2 to CUSTOMER ---
+        if (waToken && workflows?.abandoned_cart !== false) {
+          try {
+            // Format phone: remove all non-digits, ensure starts with 91
+            let rawDigits = String(cart.phone || '').replace(/\D/g, '');
+            if (rawDigits.length === 10) rawDigits = '91' + rawDigits;
+            if (rawDigits.length === 12 && !rawDigits.startsWith('91')) rawDigits = '91' + rawDigits.slice(-10);
+
+            // Extract customer name
+            const firstName = cart.first_name || 'there';
+
+            await axios.post(
+              `https://graph.facebook.com/v21.0/${WA_PHONE_ID}/messages`,
+              {
+                messaging_product: 'whatsapp',
+                to: rawDigits,
+                type: 'template',
+                template: {
+                  name: 'abandoned_cart_v2',
+                  language: { code: 'en_US' },
+                  components: [
+                    {
+                      type: 'body',
+                      parameters: [
+                        { type: 'text', text: firstName },
+                        { type: 'text', text: cart.amount }
+                      ]
+                    }
+                  ]
+                }
+              },
+              {
+                headers: {
+                  'Authorization': `Bearer ${waToken}`,
+                  'Content-Type': 'application/json'
+                }
+              }
+            );
+            cartResult.waSent = true;
+            console.log(`[WA] Sent abandoned_cart_v2 to ${rawDigits} (Cart ID: ${cart.id})`);
+          } catch (err) {
+            cartResult.waError = err.response?.data?.error?.message || err.message;
+            console.warn(`[WA] Failed to send to ${cart.phone}:`, cartResult.waError);
+          }
+        }
+
+        // --- B. Web Push admin notification ---
+        const pushPayload = JSON.stringify({
           title: '🛒 New 11FIT Abandoned Cart!',
-          body: `Customer ${cart.phone} just added order worth ₹${cart.amount}!`,
+          body: `Customer ${cart.phone} • ₹${cart.amount}${cartResult.waSent ? ' • ✅ WA Sent' : ''}`,
           icon: '/favicon.svg',
           badge: '/favicon.svg',
           tag: `cart-${cart.id}`,
@@ -155,10 +238,12 @@ export default async function handler(req, res) {
           data: { url: '/?tab=abandoned' }
         });
 
-        const results = await Promise.allSettled(
+        let pushCount = 0;
+        await Promise.allSettled(
           subs.map(async ({ subscription }) => {
             try {
-              await webpush.sendNotification(subscription, payload);
+              await webpush.sendNotification(subscription, pushPayload);
+              pushCount++;
             } catch (err) {
               if (err.statusCode === 410) {
                 await axios.delete(
@@ -169,7 +254,8 @@ export default async function handler(req, res) {
             }
           })
         );
-        notifResults.push({ id: cart.id, phone: cart.phone, totalSubscribers: subs.length, results: results.length });
+        cartResult.pushSent = pushCount;
+        notifResults.push(cartResult);
       }
     }
 
@@ -178,7 +264,7 @@ export default async function handler(req, res) {
       timestamp: new Date().toISOString(),
       newCartsCount: newCartsToNotify.length,
       newCarts: newCartsToNotify,
-      pushResults: notifResults
+      results: notifResults
     });
   } catch (error) {
     try { await client.end(); } catch (_) {}
@@ -186,3 +272,4 @@ export default async function handler(req, res) {
     return res.status(500).json({ success: false, error: error.message });
   }
 }
+

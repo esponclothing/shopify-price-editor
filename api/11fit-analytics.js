@@ -24,7 +24,7 @@ async function fetchNFUData() {
       await client.connect();
       const resOtp = await client.query('SELECT * FROM otp_logs ORDER BY created_at DESC LIMIT 1000');
       const resUsers = await client.query('SELECT * FROM network_users ORDER BY created_at DESC LIMIT 1000');
-      const resSessions = await client.query("SELECT * FROM checkout_sessions WHERE status = 'abandoned' ORDER BY created_at DESC LIMIT 300");
+      const resSessions = await client.query("SELECT * FROM checkout_sessions WHERE status = 'abandoned' AND created_at < NOW() - INTERVAL '5 minutes' ORDER BY created_at DESC LIMIT 300");
       otpLogs = resOtp.rows || [];
       networkUsers = resUsers.rows || [];
       checkoutSessions = resSessions.rows || [];
@@ -149,6 +149,7 @@ export default async function handler(req, res) {
 
         const phone10 = get10Digit(rawPhone);
         if (!phone10 || phone10.length < 10) return;
+
         const is11fitUser = Boolean(phone10 && userMap[phone10]);
         const isVerified = Boolean(phone10 && verifiedPhonesSet.has(phone10));
         const otpStatus = isVerified
@@ -224,6 +225,7 @@ export default async function handler(req, res) {
 
         const phone10 = get10Digit(rawPhone);
         if (!phone10 || phone10.length < 10) return;
+
         const normalizedPhone = rawPhone
           ? (String(rawPhone).startsWith('+') ? String(rawPhone) : `+${rawPhone}`)
           : 'N/A';

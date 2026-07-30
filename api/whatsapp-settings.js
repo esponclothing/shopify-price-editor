@@ -51,24 +51,32 @@ export default async function handler(req, res) {
         groq_api_key: row.groq_api_key || '',
         groq_model: row.groq_model || 'llama-3.3-70b-versatile',
         whatsapp_token: row.whatsapp_token ? '••••••' + row.whatsapp_token.slice(-8) : '',
-        waba_id: row.waba_id || '',
+        waba_id: row.waba_id || '2025586748064434',
         has_groq_key: !!row.groq_api_key,
         has_whatsapp_token: !!row.whatsapp_token,
-        has_waba_id: !!row.waba_id,
+        has_waba_id: !!(row.waba_id || '2025586748064434'),
         inst_language: row.inst_language || DEFAULT_INST_LANGUAGE,
         inst_order_security: row.inst_order_security || DEFAULT_INST_ORDER_SECURITY,
         inst_size_advisor: row.inst_size_advisor || DEFAULT_INST_SIZE_ADVISOR,
         inst_brand_policies: row.inst_brand_policies || DEFAULT_INST_BRAND_POLICIES,
-        inst_custom: row.inst_custom || DEFAULT_INST_CUSTOM
+        inst_custom: row.inst_custom || DEFAULT_INST_CUSTOM,
+        workflows: row.workflows || {
+          abandoned_cart: true,
+          order_placed: true,
+          order_shipped: true,
+          out_for_delivery: true,
+          order_delivered: true
+        }
       });
     } catch (err) {
       return res.status(200).json({
-        groq_api_key: '', groq_model: 'llama-3.3-70b-versatile', waba_id: '', has_groq_key: false, has_whatsapp_token: false, has_waba_id: false,
+        groq_api_key: '', groq_model: 'llama-3.3-70b-versatile', waba_id: '2025586748064434', has_groq_key: false, has_whatsapp_token: false, has_waba_id: true,
         inst_language: DEFAULT_INST_LANGUAGE,
         inst_order_security: DEFAULT_INST_ORDER_SECURITY,
         inst_size_advisor: DEFAULT_INST_SIZE_ADVISOR,
         inst_brand_policies: DEFAULT_INST_BRAND_POLICIES,
-        inst_custom: DEFAULT_INST_CUSTOM
+        inst_custom: DEFAULT_INST_CUSTOM,
+        workflows: { abandoned_cart: true, order_placed: true, order_shipped: true, out_for_delivery: true, order_delivered: true }
       });
     }
   }
@@ -78,7 +86,8 @@ export default async function handler(req, res) {
     try {
       const {
         groq_api_key, groq_model, whatsapp_token, waba_id,
-        inst_language, inst_order_security, inst_size_advisor, inst_brand_policies, inst_custom
+        inst_language, inst_order_security, inst_size_advisor, inst_brand_policies, inst_custom,
+        workflows
       } = req.body;
 
       // Check if settings row exists
@@ -97,6 +106,7 @@ export default async function handler(req, res) {
       if (inst_size_advisor !== undefined) payload.inst_size_advisor = inst_size_advisor;
       if (inst_brand_policies !== undefined) payload.inst_brand_policies = inst_brand_policies;
       if (inst_custom !== undefined) payload.inst_custom = inst_custom;
+      if (workflows !== undefined) payload.workflows = workflows;
       payload.updated_at = new Date().toISOString();
 
       if (existing && existing.length > 0) {

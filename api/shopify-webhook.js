@@ -115,9 +115,157 @@ export default async function handler(req, res) {
       });
     }
 
-    return res.status(200).json({ success: true, message: 'Shopify order & customer synced to database' });
+    // -------------------------------------------------------------
+    // UPDATE CHECKOUT SESSIONS STATUS TO 'completed' IN POSTGRES
+    // -------------------------------------------------------------
+    try {
+      const { Client } = await import('pg');
+      const nfuDbUrl = 'postgres://postgres.nfubnpgfwgrlpfhcbjlg:11fit@202612@aws-0-ap-southeast-2.pooler.supabase.com:6543/postgres';
+      const pgClient = new Client({
+        connectionString: nfuDbUrl,
+        ssl: { rejectUnauthorized: false }
+      });
+      await pgClient.connect();
+
+      const checkoutToken = order.checkout_token || order.cart_token || null;
+      
+      let queryArgs = [];
+      let whereClauses = [];
+
+      if (checkoutToken) {
+        queryArgs.push(checkoutToken);
+        whereClauses.push(`cart_details->>'token' = $${queryArgs.length}`);
+      }
+      
+      if (phone_last10) {
+        queryArgs.push(phone_last10);
+        whereClauses.push(`phone LIKE '%' || $${queryArgs.length} || '%'`);
+      }
+
+      if (whereClauses.length > 0) {
+        const updateQuery = `
+          UPDATE checkout_sessions 
+          SET status = 'completed', updated_at = NOW()
+          WHERE status = 'abandoned' AND (${whereClauses.join(' OR ')})
+        `;
+        const updateRes = await pgClient.query(updateQuery, queryArgs);
+        console.log(`Updated ${updateRes.rowCount} checkout_sessions to completed for order ${order.id}`);
+      }
+      await pgClient.end();
+    } catch (pgErr) {
+      console.error('Error updating checkout_sessions in Postgres:', pgErr.message);
+    }
+
+    // -------------------------------------------------------------
+    // SEND ORDER CONFIRMATION WHATSAPP TEMPLATE
+    // -------------------------------------------------------------
+    try {
+      // Get WA token + workflows from settings
+      const settingsRes = await fetch(`${supabaseUrl}/rest/v1/whatsapp_settings?select=whatsapp_token,workflows&order=id.desc&limit=1`, {
+        headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
+      });
+      const settingsData = await settingsRes.json();
+      const row = settingsData?.[0] || {};
+      const waToken = row.whatsapp_token;
+      const workflows = row.workflows || {};
+
+      if (waToken && workflows?.order_placed !== false) {
+        // Format customer phone for WhatsApp
+        const rawPhone = order.customer?.phone || order.shipping_address?.phone || order.billing_address?.phone || order.phone || '';
+        let waPhone = rawPhone.replace(/\D/g, '');
+        if (waPhone.length === 10) waPhone = '91' + waPhone;
+        if (waPhone.length === 12 && !waPhone.startsWith('91')) waPhone = '91' + waPhone.slice(-10);
+
+        const name = order.shipping_address?.first_name || order.customer?.first_name || 'Customer';
+        const orderName = order.name || `#${order.order_number}`;
+        const address = order.shipping_address
+          ? `${order.shipping_address.address1 || ''}, ${order.shipping_address.city || ''}, ${order.shipping_address.province || ''} ${order.shipping_address.zip || ''}`.replace(/^,\s*/, '').replace(/,\s*$/, '').trim()
+          : 'On file';
+
+        // Build items list (max 3 lines to stay within Meta limits)
+        const lineItems = order.line_items || [];
+        const itemsText = lineItems.slice(0, 3).map(i => {
+          const variant = i.variant_title && i.variant_title !== 'Default Title' ? ` (${i.variant_title})` : '';
+          return `${i.title}${variant} x${i.quantity}`;
+        }).join('\n') + (lineItems.length > 3 ? `\n+${lineItems.length - 3} more item(s)` : '');
+
+        // Detect payment type
+        const tags = (order.tags || '').toLowerCase();
+        const totalPrice = parseFloat(order.total_price || 0);
+        const totalOutstanding = parseFloat(order.total_outstanding || 0);
+        const paymentGateway = (order.payment_gateway || '').toLowerCase();
+        const advanceMatch = order.tags?.match?.(/Advance_Paid_([0-9.]+)/);
+
+        let templateName, components;
+        const WA_PHONE_ID = '1189183190949431';
+
+        if (advanceMatch) {
+          // ADVANCE / PARTIAL PAYMENT (6 params)
+          const advancePaid = advanceMatch[1];
+          const balanceDue = (totalPrice - parseFloat(advancePaid)).toFixed(2);
+          templateName = 'order_confirm_partial_v1';
+          components = [{
+            type: 'body',
+            parameters: [
+              { type: 'text', text: name },
+              { type: 'text', text: orderName },
+              { type: 'text', text: itemsText || 'Your items' },
+              { type: 'text', text: advancePaid },
+              { type: 'text', text: balanceDue },
+              { type: 'text', text: address }
+            ]
+          }];
+        } else if (paymentGateway.includes('cash') || paymentGateway === 'cod' || totalOutstanding >= totalPrice * 0.9) {
+          // COD (5 params)
+          templateName = 'order_confirmation_cod_v1';
+          components = [{
+            type: 'body',
+            parameters: [
+              { type: 'text', text: name },
+              { type: 'text', text: orderName },
+              { type: 'text', text: itemsText || 'Your items' },
+              { type: 'text', text: totalPrice.toFixed(2) },
+              { type: 'text', text: address }
+            ]
+          }];
+        } else {
+          // PREPAID (5 params)
+          templateName = 'order_confirm_prepaid_v1';
+          components = [{
+            type: 'body',
+            parameters: [
+              { type: 'text', text: name },
+              { type: 'text', text: orderName },
+              { type: 'text', text: itemsText || 'Your items' },
+              { type: 'text', text: totalPrice.toFixed(2) },
+              { type: 'text', text: address }
+            ]
+          }];
+        }
+
+        if (waPhone.length >= 10) {
+          const waRes = await fetch(`https://graph.facebook.com/v21.0/${WA_PHONE_ID}/messages`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${waToken}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              messaging_product: 'whatsapp',
+              to: waPhone,
+              type: 'template',
+              template: { name: templateName, language: { code: 'en_US' }, components }
+            })
+          });
+          const waData = await waRes.json();
+          console.log(`[WA Order] Sent ${templateName} to ${waPhone} → MsgID: ${waData?.messages?.[0]?.id || 'N/A'}`);
+        }
+      }
+    } catch (waErr) {
+      console.error('[WA Order] Error sending confirmation template:', waErr.message);
+    }
+
+    return res.status(200).json({ success: true, message: 'Shopify order & customer synced and WhatsApp sent' });
   } catch (err) {
     console.error('Webhook error:', err);
     return res.status(500).json({ error: 'Failed to process Shopify webhook' });
   }
 }
+

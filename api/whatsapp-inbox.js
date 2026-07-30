@@ -229,7 +229,7 @@ export default async function handler(req, res) {
 
   // 3. POST ACTION: TOGGLE AI OR SEND MANUAL MESSAGE
   if (req.method === 'POST') {
-    const { action: postAction, phone, ai_paused, text, media_url, template_name, type } = req.body || {};
+    const { action: postAction, phone, ai_paused, text, media_url, template_name, template_params, type } = req.body || {};
 
     if (!phone) return res.status(400).json({ error: 'phone is required' });
 
@@ -311,9 +311,33 @@ export default async function handler(req, res) {
         payload.audio = { link: media_url };
       } else if (type === 'template' && template_name) {
         payload.type = 'template';
+        // Build template components with variable params if provided
+        const components = [];
+        if (Array.isArray(template_params) && template_params.length > 0) {
+          components.push({
+            type: 'body',
+            parameters: template_params.map(p => ({ type: 'text', text: String(p || '') }))
+          });
+        }
         payload.template = {
           name: template_name,
-          language: { code: 'en' }
+          language: { code: 'en_US' },
+          ...(components.length > 0 && { components })
+        };
+      } else if (postAction === 'send_template' && template_name) {
+        // Direct template action (from 24hr-closed fallback)
+        payload.type = 'template';
+        const components = [];
+        if (Array.isArray(template_params) && template_params.length > 0) {
+          components.push({
+            type: 'body',
+            parameters: template_params.map(p => ({ type: 'text', text: String(p || '') }))
+          });
+        }
+        payload.template = {
+          name: template_name,
+          language: { code: 'en_US' },
+          ...(components.length > 0 && { components })
         };
       } else {
         payload.text = { body: text || '' };

@@ -3,7 +3,7 @@ import axios from 'axios';
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://xkiukbebnntjzfilyfmh.supabase.co';
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhraXVrYmVibm50anpmaWx5Zm1oIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4NTIyMjExOCwiZXhwIjoyMTAwNzk4MTE4fQ.bqc4x9ok4pgmcffKPpj-BOUELvAli5weCJtwuL4X7Rc';
 
-const DEFAULT_META_TOKEN = process.env.WHATSAPP_TOKEN || 'EAAM99yhroGsBR1rm4kaPOHQRtcuoMjZAdpcz2F4K1AXjYYfvtGLwttdBMO2fdaUI4lzB0fG0iaZAabFdgP9aA4GCXtw0t4zLmwZBg0ShVCJBZBYZBVYnmGkb2f9XZAXcD9evV1hoAcF9DGfSYtTCfTzzcC9iZCmWZBTiyMZC4ZBnmvOVqPfE1ZCJE3Lc3ZBs3egltQZDZD';
+const DEFAULT_META_TOKEN = process.env.WHATSAPP_TOKEN || 'EAAM99yhroGsBSGl4Hqpz75Axd5ZAWUF2wVNOMx0yIJCeEehWE7Dwe8qAaFckBDIw95JmL0rHwBK9rgUp9eA6jBdTZB5NBNLpGcu4mmXcvJ1AasaXmfpoTg2fZAZCjOescX0lUM4KDDZCgT8KQI7ZBw9PpuXMz8oCsI4Xh5BCQgiyhRSQBEPrOWZBQnVEIqBngZDZD';
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -26,6 +26,7 @@ export default async function handler(req, res) {
     const row = setRes.data?.[0] || {};
     if (row.whatsapp_token) token = row.whatsapp_token;
     if (!wabaId && row.waba_id) wabaId = row.waba_id;
+    if (!wabaId) wabaId = '2025586748064434';
   } catch (err) {
     console.error('Error fetching settings:', err.message);
   }
@@ -106,10 +107,13 @@ export default async function handler(req, res) {
       const metaErr = err.response?.data?.error?.message || err.message;
       const metaErrUserTitle = err.response?.data?.error?.error_user_title;
       const metaErrUserMsg = err.response?.data?.error?.error_user_msg;
-      console.error('Meta Create Template Error:', metaErr, err.response?.data);
+      let displayErr = metaErrUserMsg || metaErrUserTitle || metaErr;
+      if (String(displayErr).includes('(#100)') || String(displayErr).includes('Need permission')) {
+        displayErr = "Meta Permission Error (#100): Your WhatsApp Access Token needs 'whatsapp_business_management' permission to create/delete templates. In Meta Business Manager -> System Users, generate a token with 'whatsapp_business_management' enabled.";
+      }
       return res.status(err.response?.status || 500).json({
         success: false,
-        error: metaErrUserMsg || metaErrUserTitle || metaErr,
+        error: displayErr,
         details: err.response?.data || null
       });
     }
@@ -134,10 +138,20 @@ export default async function handler(req, res) {
       });
     } catch (err) {
       const metaErr = err.response?.data?.error?.message || err.message;
-      console.error('Meta Delete Template Error:', metaErr);
+      const metaErrUserTitle = err.response?.data?.error?.error_user_title;
+      const metaErrUserMsg = err.response?.data?.error?.error_user_msg;
+      const subcode = err.response?.data?.error?.error_subcode;
+
+      let displayErr = metaErrUserMsg || metaErrUserTitle || metaErr;
+      if (subcode === 2388094 || String(displayErr).includes('सेंपल') || String(displayErr).toLowerCase().includes('sample')) {
+        displayErr = "Meta Policy: Sample or default WhatsApp templates (like 'hello_world') cannot be deleted or edited.";
+      } else if (String(displayErr).includes('(#100)') || String(displayErr).includes('Need permission')) {
+        displayErr = "Meta Permission Error (#100): Your WhatsApp Access Token needs 'whatsapp_business_management' permission to create/delete templates. In Meta Business Manager -> System Users, generate a token with 'whatsapp_business_management' enabled.";
+      }
+      console.error('Meta Delete Template Error:', displayErr);
       return res.status(err.response?.status || 500).json({
         success: false,
-        error: metaErr,
+        error: displayErr,
         details: err.response?.data || null
       });
     }

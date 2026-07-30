@@ -489,31 +489,65 @@ export default function WhatsAppAIDashboard() {
         `Your package is on its way! Let us know if you need any assistance. 📦`;
     }
 
-    try {
-      const res = await fetch('/api/whatsapp-inbox', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'send_message',
-          phone: ordersCustomerPhone,
-          type: 'text',
-          text: msgText
-        })
-      });
-      if (res.ok) {
-        if (selectedChat?.phone === ordersCustomerPhone) {
-          await fetchMessages(ordersCustomerPhone, false);
+    // If 24hr window is OPEN and we have msgText → send as free text
+    // If 24hr window is CLOSED → fall back to WhatsApp template
+    const chatForPhone = chats.find(c => {
+      const d = String(c.phone || '').replace(/\D/g, '').slice(-10);
+      const p = String(ordersCustomerPhone || '').replace(/\D/g, '').slice(-10);
+      return d === p;
+    });
+    const windowOpen = chatForPhone ? get24HourStatus(chatForPhone).isOpen : false;
+
+    if (windowOpen && msgText) {
+      // Send as free text
+      try {
+        const res = await fetch('/api/whatsapp-inbox', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'send_message', phone: ordersCustomerPhone, type: 'text', text: msgText })
+        });
+        if (res.ok) {
+          if (selectedChat?.phone === ordersCustomerPhone) await fetchMessages(ordersCustomerPhone, false);
+          alert(`✅ ${actionType === 'details' ? 'Order Details' : 'Shipping Info'} sent as text to ${formatPhone(ordersCustomerPhone)}!`);
+        } else {
+          const err = await res.json();
+          alert(`❌ Error: ${err.error || 'Failed'}`);
         }
-        alert(`✅ ${actionType === 'details' ? 'Order Details' : 'Shipping Info'} sent to WhatsApp (${formatPhone(ordersCustomerPhone)})!`);
-      } else {
-        const err = await res.json();
-        alert(`❌ Error sending message: ${err.error || 'Failed'}`);
+      } catch (err) {
+        alert(`❌ Error: ${err.message}`);
       }
-    } catch (err) {
-      alert('❌ Network error sending message');
-    } finally {
-      setSendingOrderAction(null);
+    } else {
+      // 24hr window CLOSED — send as WhatsApp template
+      const tplId = actionType === 'shipping' ? 'order_shipped_v1' : 'order_confirm_prepaid_v1';
+      const autoParams = getAutoParams(tplId, chatForPhone, customerOrders, []);
+      const tplDef = templatesList.find(t => t.id === tplId);
+      const paramString = autoParams.map((v,i) => `${tplDef?.params?.[i] || `{{${i+1}}}`}: ${v}`).join('\n');
+      const confirmed = window.confirm(`24hr window is CLOSED.\n\nSend via WhatsApp Template: "${tplId}"?\n\nVariables:\n${paramString}`);
+      if (!confirmed) { setSendingOrderAction(null); return; }
+
+      try {
+        const res = await fetch('/api/whatsapp-inbox', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'send_template',
+            phone: ordersCustomerPhone,
+            template_name: tplId,
+            template_params: autoParams
+          })
+        });
+        if (res.ok) {
+          if (selectedChat?.phone === ordersCustomerPhone) await fetchMessages(ordersCustomerPhone, false);
+          alert(`✅ Template "${tplId}" sent to ${formatPhone(ordersCustomerPhone)}!`);
+        } else {
+          const err = await res.json();
+          alert(`❌ Error: ${err.error || 'Failed'}`);
+        }
+      } catch (err) {
+        alert(`❌ Error: ${err.message}`);
+      }
     }
+    setSendingOrderAction(null);
   };
 
   // --- PERSIST BELL STATE + REGISTER SERVICE WORKER ---
@@ -593,11 +627,16 @@ export default function WhatsAppAIDashboard() {
           if (carts.length > 0) {
             const newestCart = carts[0];
             const lastSeenId = localStorage.getItem('11fit_last_ab_cart_id');
-            const lastSeenTime = localStorage.getItem('11fit_last_ab_cart_time');
-            const newestTime = new Date(newestCart.created_at || Date.now()).getTime();
+            const notifiedCartIds = JSON.parse(localStorage.getItem('11fit_notified_cart_ids') || '[]');
+            const cartIdStr = String(newestCart.id);
 
-            const isNewCart = lastSeenId && (lastSeenId !== String(newestCart.id) || (lastSeenTime && newestTime > Number(lastSeenTime)));
+            // A cart is only new if lastSeenId was initialized, it's not the same as lastSeenId, and we've never notified for this cartId before
+            const isNewCart = lastSeenId && lastSeenId !== cartIdStr && !notifiedCartIds.includes(cartIdStr);
             if (isNewCart) {
+               // Record this cart ID so we never notify for it again
+               const updatedNotifiedIds = [cartIdStr, ...notifiedCartIds].slice(0, 50);
+               localStorage.setItem('11fit_notified_cart_ids', JSON.stringify(updatedNotifiedIds));
+
                setNewAbCartNotification({
                  id: newestCart.id,
                  phone: newestCart.phone,
@@ -606,23 +645,8 @@ export default function WhatsAppAIDashboard() {
                  currency: newestCart.currency || 'INR'
                });
                playCriticalAlertBeep();
-               triggerAlertNotification(
-                 `🛒 New 11FIT Abandoned Cart!`,
-                 `Mobile: ${newestCart.phone} | Amount: ₹${newestCart.total_price}`
-               );
-               fetch('/api/webpush', {
-                 method: 'POST',
-                 headers: { 'Content-Type': 'application/json' },
-                 body: JSON.stringify({
-                   action: 'notify',
-                   title: `🛒 New 11FIT Abandoned Cart!`,
-                   body: `Mobile: ${newestCart.phone} | Amount: ₹${newestCart.total_price}`,
-                   data: { url: '/?tab=abandoned' }
-                 })
-               }).catch(() => {});
             }
-            localStorage.setItem('11fit_last_ab_cart_id', String(newestCart.id));
-            localStorage.setItem('11fit_last_ab_cart_time', String(newestTime));
+            localStorage.setItem('11fit_last_ab_cart_id', cartIdStr);
           }
         }
       }
@@ -635,27 +659,31 @@ export default function WhatsAppAIDashboard() {
 
   const handleSendAbCartRecovery = async (cart) => {
     if (!cart || !cart.phone) return;
-    const itemsText = (cart.line_items || [])
-      .map(i => `• ${i.quantity}x ${i.title}`)
-      .join('\n');
-    const checkoutLink = cart.abandoned_checkout_url || 'https://11fit.in';
-    const msgText = `🛒 *Forgot something at 11FIT?*\n\n` +
-      `Hi there! We noticed you left some amazing items in your cart:\n\n` +
-      `${itemsText || '• Your 11FIT Cart'}\n\n` +
-      `*Total Value:* ₹${cart.total_price || '0.00'}\n\n` +
-      `Your cart is saved! Complete your checkout securely with 1-click here:\n` +
-      `${checkoutLink}\n\n` +
-      `Need any help with sizing or offers? Reply to this message! 🛍️`;
+    const name = cart.customer_name?.split(' ')?.[0] || 'there';
+    const amount = (parseFloat(cart.cart_details?.total_price || cart.total_price || 0) / (String(cart.cart_details?.total_price || '').includes('.') ? 1 : 100)).toFixed(2);
 
-    setActiveSubTab('inbox');
-    setInboxSearch(cart.phone);
-    setReplyText(msgText);
+    const confirmed = window.confirm(`Send "Abandoned Cart Recovery" template to ${cart.phone}?\n\nCustomer: ${name}\nAmount: ₹${amount}`);
+    if (!confirmed) return;
 
     try {
-      await navigator.clipboard.writeText(msgText);
-      alert(`Recovery message prepared for ${cart.phone} & copied to clipboard! Opening WhatsApp Inbox...`);
-    } catch (_) {
-      alert(`Opening WhatsApp Inbox for ${cart.phone}...`);
+      const res = await fetch('/api/whatsapp-inbox', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'send_template',
+          phone: cart.phone,
+          template_name: 'abandoned_cart_v2',
+          template_params: [name, amount]
+        })
+      });
+      if (res.ok) {
+        alert(`✅ Abandoned Cart template sent to ${cart.phone}!`);
+      } else {
+        const err = await res.json();
+        alert(`❌ Error: ${err.error || 'Failed'}`);
+      }
+    } catch (err) {
+      alert(`❌ Error: ${err.message}`);
     }
   };
 
@@ -868,7 +896,15 @@ export default function WhatsAppAIDashboard() {
           type: replyType,
           text: replyText,
           media_url: mediaUrl,
-          template_name: selectedTemplate
+          template_name: selectedTemplate,
+          template_params: replyType === 'template' ? getAutoParams(selectedTemplate, selectedChat,
+            (elevenFitData?.orders || []).filter(o => {
+              const cp = String(o.customer?.phone || o.shipping_address?.phone || '').replace(/\D/g,'').slice(-10);
+              const sp = String(selectedChat?.phone || '').replace(/\D/g,'').slice(-10);
+              return cp === sp;
+            }).sort((a,b) => new Date(b.created_at) - new Date(a.created_at)),
+            elevenFitData?.abandonedCarts?.filter(c => String(c.phone || c.customer_phone || '').replace(/\D/g,'').slice(-10) === String(selectedChat?.phone || '').replace(/\D/g,'').slice(-10)) || []
+          ) : undefined
         })
       });
       if (res.ok) {
@@ -920,12 +956,57 @@ export default function WhatsAppAIDashboard() {
     return p.startsWith('+') ? p : `+${p}`;
   };
 
+  // Real Meta-approved templates with correct parameter mapping
   const templatesList = [
-    { id: 'combo_offer_reengage', label: '🛍️ Combo Offer Re-engagement' },
-    { id: 'order_update_notification', label: '📦 Order Status Notification' },
-    { id: 'abandoned_cart_reminder', label: '🛒 Abandoned Cart Recovery' },
-    { id: 'support_ticket_update', label: '💬 Support Assistance Update' }
+    { id: 'abandoned_cart_v2',           label: '🛒 Abandoned Cart Recovery',         category: 'MARKETING', params: ['Customer Name', 'Cart Value (₹)'] },
+    { id: 'combo_offer_reengage_v2',     label: '🛍️ Special Combo Offer',             category: 'MARKETING', params: ['Customer Name'] },
+    { id: 'order_status_check_v1',       label: 'ℹ️ Order Status Check',              category: 'UTILITY',   params: ['Name', 'Order #', 'Status', 'Details/Tracking'] },
+    { id: 'order_confirm_prepaid_v1',    label: '✅ Order Confirmed (Prepaid)',        category: 'UTILITY',   params: ['Name', 'Order #', 'Items', 'Amount Paid (₹)', 'Address'] },
+    { id: 'order_confirmation_cod_v1',   label: '💵 Order Confirmed (COD)',           category: 'UTILITY',   params: ['Name', 'Order #', 'Items', 'Amount Payable (₹)', 'Address'] },
+    { id: 'order_confirm_partial_v1',    label: '🪙 Order Confirmed (Advance/Partial)',category: 'UTILITY',   params: ['Name', 'Order #', 'Items', 'Advance Paid (₹)', 'Balance Due (₹)', 'Address'] },
+    { id: 'order_shipped_v1',            label: '🚚 Order Shipped',                   category: 'UTILITY',   params: ['Name', 'Order #', 'Courier', 'Tracking #'] },
+    { id: 'out_for_delivery_prepaid_v1', label: '🏠 Out For Delivery (Prepaid)',      category: 'UTILITY',   params: ['Name', 'Order #'] },
+    { id: 'out_for_delivery_cod_v1',     label: '🏠 Out For Delivery (COD)',          category: 'UTILITY',   params: ['Name', 'Order #', 'Amount to Collect (₹)'] },
+    { id: 'order_delivered_confirm_v1',  label: '🎉 Order Delivered',                 category: 'UTILITY',   params: ['Name', 'Order #'] },
   ];
+
+  // Smart template param values - auto-filled from customer order/cart context
+  const getAutoParams = (templateId, chat, orders, carts) => {
+    const name = chat?.customer_name?.split(' ')?.[0] || 'Customer';
+    const latestOrder = orders?.[0];
+    const latestCart = carts?.[0];
+    const orderName = latestOrder?.name || '';
+    const totalPrice = latestOrder?.total_price || '0';
+    const address = latestOrder?.shipping_address
+      ? `${latestOrder.shipping_address.address1 || ''}, ${latestOrder.shipping_address.city || ''}`.trim().replace(/^,|,$/, '')
+      : '';
+    const itemsText = (latestOrder?.line_items || []).slice(0,2).map(i => {
+      const v = i.variant_title && i.variant_title !== 'Default Title' ? ` (${i.variant_title})` : '';
+      return `${i.title}${v} x${i.quantity}`;
+    }).join(', ');
+    const fulfillment = latestOrder?.fulfillments?.[0];
+    const cartAmount = latestCart ? (parseFloat(latestCart.cart_details?.total_price || latestCart.amount || 0) / (String(latestCart.cart_details?.total_price || '').includes('.') ? 1 : 100)).toFixed(2) : '0';
+
+    switch (templateId) {
+      case 'abandoned_cart_v2':           return [name, cartAmount];
+      case 'combo_offer_reengage_v2':     return [name];
+      case 'order_status_check_v1': {
+        let status = 'Processing';
+        if (latestOrder?.cancelled_at) status = 'Cancelled';
+        else if (latestOrder?.fulfillment_status === 'fulfilled') status = 'Fulfilled / Dispatched';
+        const details = fulfillment?.tracking_url ? `Track here: ${fulfillment.tracking_url}` : 'Your order is being prepared.';
+        return [name, orderName, status, details];
+      }
+      case 'order_confirm_prepaid_v1':    return [name, orderName, itemsText, totalPrice, address];
+      case 'order_confirmation_cod_v1':   return [name, orderName, itemsText, totalPrice, address];
+      case 'order_confirm_partial_v1':    return [name, orderName, itemsText, (parseFloat(totalPrice)*0.1).toFixed(2), (parseFloat(totalPrice)*0.9).toFixed(2), address];
+      case 'order_shipped_v1':            return [name, orderName, fulfillment?.tracking_company || 'Courier', fulfillment?.tracking_number || ''];
+      case 'out_for_delivery_prepaid_v1': return [name, orderName];
+      case 'out_for_delivery_cod_v1':     return [name, orderName, totalPrice];
+      case 'order_delivered_confirm_v1':  return [name, orderName];
+      default: return [];
+    }
+  };
 
   const renderTextWithLinks = (text) => {
     if (!text) return null;
@@ -1716,26 +1797,64 @@ export default function WhatsAppAIDashboard() {
 
                   {/* INPUT FIELDS BASED ON TYPE */}
                   {replyType === 'template' ? (
-                    <div className="flex items-center gap-3">
-                      <select
-                        value={selectedTemplate}
-                        onChange={(e) => setSelectedTemplate(e.target.value)}
-                        className="flex-1 bg-[#0b141a] border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
-                      >
-                        {templatesList.map(t => (
-                          <option key={t.id} value={t.id}>{t.label}</option>
-                        ))}
-                      </select>
-                      <button
-                        type="submit"
-                        disabled={sendingReply}
-                        className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-bold flex items-center gap-2 shadow-lg shadow-emerald-600/20"
-                      >
-                        {sendingReply
-                          ? <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                          : <Send className="w-3.5 h-3.5" />}
-                        Send Template
-                      </button>
+                    <div className="space-y-2">
+                      {/* Template Selector */}
+                      <div className="flex items-center gap-2">
+                        <select
+                          value={selectedTemplate}
+                          onChange={(e) => setSelectedTemplate(e.target.value)}
+                          className="flex-1 bg-[#0b141a] border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
+                        >
+                          {templatesList.map(t => (
+                            <option key={t.id} value={t.id}>{t.label}</option>
+                          ))}
+                        </select>
+                        <button
+                          type="submit"
+                          disabled={sendingReply}
+                          className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-bold flex items-center gap-2 shadow-lg shadow-emerald-600/20 shrink-0"
+                        >
+                          {sendingReply
+                            ? <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                            : <Send className="w-3.5 h-3.5" />}
+                          Send
+                        </button>
+                      </div>
+                      {/* Variable Preview — auto-filled from customer context */}
+                      {(() => {
+                        const tpl = templatesList.find(t => t.id === selectedTemplate);
+                        
+                        // Smartly extract the active chat's orders
+                        const customerOrders = (elevenFitData?.orders || []).filter(o => {
+                          const cp = String(o.customer?.phone || o.shipping_address?.phone || '').replace(/\D/g,'').slice(-10);
+                          const sp = String(selectedChat?.phone || '').replace(/\D/g,'').slice(-10);
+                          return cp === sp;
+                        }).sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
+
+                        const customerCarts = (elevenFitData?.abandonedCarts || []).filter(c => {
+                          const cp = String(c.phone || c.customer_phone || '').replace(/\D/g,'').slice(-10);
+                          const sp = String(selectedChat?.phone || '').replace(/\D/g,'').slice(-10);
+                          return cp === sp;
+                        }) || [];
+                        const params = tpl ? getAutoParams(selectedTemplate, selectedChat, customerOrders, customerCarts) : [];
+                        if (!tpl || params.length === 0) return null;
+                        return (
+                          <div className="bg-slate-900/60 border border-slate-700/50 rounded-lg p-2.5 space-y-1">
+                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-1.5">Auto-filled Variables</p>
+                            {tpl.params.map((label, i) => (
+                              <div key={i} className="flex items-center gap-2">
+                                <span className="text-[10px] text-slate-500 w-28 shrink-0">{`{{${i+1}}} ${label}:`}</span>
+                                <span className={`text-[11px] font-medium truncate ${params[i] ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                  {params[i] || '— not found'}
+                                </span>
+                              </div>
+                            ))}
+                            {selectedTemplate === 'abandoned_cart_v2' && customerCarts.length > 1 && (
+                              <p className="text-[10px] text-amber-400 mt-1">⚠️ {customerCarts.length} carts found — using most recent</p>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </div>
                   ) : (
                     <div className="flex items-center gap-2">
