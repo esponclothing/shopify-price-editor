@@ -278,6 +278,13 @@ export default async function handler(req, res) {
       };
     });
 
+    // Automatically trigger push notification check asynchronously in background
+    try {
+      const host = req.headers.host || 'shopify-price-editor.vercel.app';
+      const protocol = host.includes('localhost') ? 'http' : 'https';
+      axios.get(`${protocol}://${host}/api/cron-check-abandoned`, { timeout: 3000 }).catch(() => {});
+    } catch (_) {}
+
     return res.status(200).json({
       success: true,
       timestamp: new Date().toISOString(),

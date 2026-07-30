@@ -23,7 +23,8 @@ self.addEventListener('push', (event) => {
     badge: payload.badge || '/favicon.svg',
     tag: payload.tag || 'wa-new-msg',
     renotify: true,
-    requireInteraction: true,       // keeps notification visible until dismissed
+    requireInteraction: true,
+    silent: false,
     vibrate: payload.vibrate || [300, 100, 300, 100, 300],
     data: payload.data || { url: '/' }
   };
