@@ -281,6 +281,16 @@ export default async function handler(req, res) {
           });
           const waData = await waRes.json();
           console.log(`[WA Order] Sent ${templateName} to ${waPhone} → MsgID: ${waData?.messages?.[0]?.id || 'N/A'}`);
+
+          if (waRes.ok) {
+            const msgText = `📦 *[Template: ${templateName}]*\nOrder #${order.order_number} • ${paymentInfo}\n${itemsText || 'Shipping/Order Update'}`;
+            await supabase.from('whatsapp_chat_memory').insert([{
+              phone: waPhone,
+              role: 'assistant',
+              content: msgText,
+              created_at: new Date().toISOString()
+            }]).catch(e => console.error('Failed to log template to chat memory:', e));
+          }
         }
       }
     } catch (waErr) {
