@@ -197,7 +197,7 @@ export default async function handler(req, res) {
                 to: rawDigits,
                 type: 'template',
                 template: {
-                  name: 'abandoned_cart_v2',
+                  name: 'abandoned_cart_v3',
                   language: { code: 'en_US' },
                   components: [
                     {
@@ -205,6 +205,14 @@ export default async function handler(req, res) {
                       parameters: [
                         { type: 'text', text: firstName },
                         { type: 'text', text: cart.amount }
+                      ]
+                    },
+                    {
+                      type: 'button',
+                      sub_type: 'url',
+                      index: '0',
+                      parameters: [
+                        { type: 'text', text: cart.id }
                       ]
                     }
                   ]

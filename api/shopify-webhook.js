@@ -4,6 +4,7 @@ export default async function handler(req, res) {
   }
 
   const order = req.body;
+  const topic = req.headers['x-shopify-topic'] || 'orders/create';
   if (!order || !order.id) {
     return res.status(200).json({ message: 'No valid order payload found, ignoring' });
   }
@@ -164,12 +165,21 @@ export default async function handler(req, res) {
       const settingsRes = await fetch(`${supabaseUrl}/rest/v1/whatsapp_settings?select=whatsapp_token,workflows&order=id.desc&limit=1`, {
         headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
       });
-      const settingsData = await settingsRes.json();
+      let settingsData = [];
+      if (settingsRes.ok) {
+        settingsData = await settingsRes.json();
+      } else {
+        console.error('Failed to fetch whatsapp_settings:', await settingsRes.text());
+      }
       const row = settingsData?.[0] || {};
       const waToken = row.whatsapp_token;
       const workflows = row.workflows || {};
 
-      if (waToken && workflows?.order_placed !== false) {
+      // Check if we should send a WhatsApp message based on the topic and workflow settings
+      const shouldSendCreate = topic === 'orders/create' && workflows?.order_placed !== false;
+      const shouldSendFulfill = topic === 'orders/fulfilled' && workflows?.order_shipped !== false;
+
+      if (waToken && (shouldSendCreate || shouldSendFulfill)) {
         // Format customer phone for WhatsApp
         const rawPhone = order.customer?.phone || order.shipping_address?.phone || order.billing_address?.phone || order.phone || '';
         let waPhone = rawPhone.replace(/\D/g, '');
@@ -187,7 +197,7 @@ export default async function handler(req, res) {
         const itemsText = lineItems.slice(0, 3).map(i => {
           const variant = i.variant_title && i.variant_title !== 'Default Title' ? ` (${i.variant_title})` : '';
           return `${i.title}${variant} x${i.quantity}`;
-        }).join('\n') + (lineItems.length > 3 ? `\n+${lineItems.length - 3} more item(s)` : '');
+        }).join(', ') + (lineItems.length > 3 ? ` +${lineItems.length - 3} more item(s)` : '');
 
         // Detect payment type
         const tags = (order.tags || '').toLowerCase();
@@ -199,46 +209,57 @@ export default async function handler(req, res) {
         let templateName, components;
         const WA_PHONE_ID = '1189183190949431';
 
-        if (advanceMatch) {
-          // ADVANCE / PARTIAL PAYMENT (6 params)
-          const advancePaid = advanceMatch[1];
-          const balanceDue = (totalPrice - parseFloat(advancePaid)).toFixed(2);
-          templateName = 'order_confirm_partial_v1';
+        if (topic === 'orders/fulfilled') {
+          // ORDER SHIPPED / OUT FOR DELIVERY (using out_for_delivery_v2 for dynamic tracking link)
+          const fulfillment = (order.fulfillments && order.fulfillments.length > 0) ? order.fulfillments[0] : null;
+          const trackingUrl = fulfillment?.tracking_url || (fulfillment?.tracking_urls && fulfillment.tracking_urls[0]) || '';
+          
+          let paymentInfo = '';
+          if (paymentGateway.includes('cash') || paymentGateway === 'cod' || totalOutstanding >= totalPrice * 0.9) {
+            paymentInfo = `₹${totalPrice.toFixed(2)} (COD - Please keep cash/UPI ready)`;
+          } else {
+            paymentInfo = `Prepaid (No payment required)`;
+          }
+
+          templateName = 'out_for_delivery_v2';
           components = [{
             type: 'body',
             parameters: [
               { type: 'text', text: name },
               { type: 'text', text: orderName },
-              { type: 'text', text: itemsText || 'Your items' },
-              { type: 'text', text: advancePaid },
-              { type: 'text', text: balanceDue },
-              { type: 'text', text: address }
-            ]
-          }];
-        } else if (paymentGateway.includes('cash') || paymentGateway === 'cod' || totalOutstanding >= totalPrice * 0.9) {
-          // COD (5 params)
-          templateName = 'order_confirmation_cod_v1';
-          components = [{
-            type: 'body',
-            parameters: [
-              { type: 'text', text: name },
-              { type: 'text', text: orderName },
-              { type: 'text', text: itemsText || 'Your items' },
-              { type: 'text', text: totalPrice.toFixed(2) },
-              { type: 'text', text: address }
+              { type: 'text', text: trackingUrl ? `Track here: ${trackingUrl}` : 'Your order is on the way.' },
+              { type: 'text', text: paymentInfo }
             ]
           }];
         } else {
-          // PREPAID (5 params)
-          templateName = 'order_confirm_prepaid_v1';
+          // ORDER CONFIRMED (using order_confirmed_v2)
+          let paymentInfo = '';
+          if (advanceMatch) {
+            const advancePaid = advanceMatch[1];
+            const balanceDue = (totalPrice - parseFloat(advancePaid)).toFixed(2);
+            paymentInfo = `₹${balanceDue} Due (Advance ₹${advancePaid} paid)`;
+          } else if (paymentGateway.includes('cash') || paymentGateway === 'cod' || totalOutstanding >= totalPrice * 0.9) {
+            paymentInfo = `₹${totalPrice.toFixed(2)} (COD)`;
+          } else {
+            paymentInfo = `₹${totalPrice.toFixed(2)} (Prepaid)`;
+          }
+
+          templateName = 'order_confirmed_v2';
           components = [{
             type: 'body',
             parameters: [
               { type: 'text', text: name },
               { type: 'text', text: orderName },
               { type: 'text', text: itemsText || 'Your items' },
-              { type: 'text', text: totalPrice.toFixed(2) },
+              { type: 'text', text: paymentInfo },
               { type: 'text', text: address }
+            ]
+          }, {
+            type: 'button',
+            sub_type: 'quick_reply',
+            index: '0',
+            parameters: [
+              { type: 'payload', payload: 'track_order' }
             ]
           }];
         }
@@ -251,7 +272,11 @@ export default async function handler(req, res) {
               messaging_product: 'whatsapp',
               to: waPhone,
               type: 'template',
-              template: { name: templateName, language: { code: 'en_US' }, components }
+              template: {
+                name: templateName,
+                language: { code: 'en_US' },
+                components
+              }
             })
           });
           const waData = await waRes.json();
