@@ -445,6 +445,16 @@ export default async function handler(req, res) {
       const value = changes?.value;
       const message = value?.messages?.[0];
 
+      // AUTO-CAPTURE WABA_ID: Save WhatsApp Business Account ID to settings whenever a webhook arrives
+      const wabaId = entry?.id;
+      if (wabaId && SUPABASE_URL && SUPABASE_KEY) {
+        axios.patch(
+          `${SUPABASE_URL}/rest/v1/whatsapp_settings?id=eq.1`,
+          { waba_id: String(wabaId) },
+          { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json' } }
+        ).catch(() => {});
+      }
+
       // CRITICAL STATUS FILTER: Ignore sent / delivered / read receipts, but accept text, audio, image, and video!
       if (!message || (message.type !== 'text' && message.type !== 'audio' && message.type !== 'image' && message.type !== 'video')) {
         await logExecution({

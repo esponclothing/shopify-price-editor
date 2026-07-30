@@ -51,8 +51,10 @@ export default async function handler(req, res) {
         groq_api_key: row.groq_api_key || '',
         groq_model: row.groq_model || 'llama-3.3-70b-versatile',
         whatsapp_token: row.whatsapp_token ? '••••••' + row.whatsapp_token.slice(-8) : '',
+        waba_id: row.waba_id || '',
         has_groq_key: !!row.groq_api_key,
         has_whatsapp_token: !!row.whatsapp_token,
+        has_waba_id: !!row.waba_id,
         inst_language: row.inst_language || DEFAULT_INST_LANGUAGE,
         inst_order_security: row.inst_order_security || DEFAULT_INST_ORDER_SECURITY,
         inst_size_advisor: row.inst_size_advisor || DEFAULT_INST_SIZE_ADVISOR,
@@ -61,7 +63,7 @@ export default async function handler(req, res) {
       });
     } catch (err) {
       return res.status(200).json({
-        groq_api_key: '', groq_model: 'llama-3.3-70b-versatile', has_groq_key: false, has_whatsapp_token: false,
+        groq_api_key: '', groq_model: 'llama-3.3-70b-versatile', waba_id: '', has_groq_key: false, has_whatsapp_token: false, has_waba_id: false,
         inst_language: DEFAULT_INST_LANGUAGE,
         inst_order_security: DEFAULT_INST_ORDER_SECURITY,
         inst_size_advisor: DEFAULT_INST_SIZE_ADVISOR,
@@ -75,7 +77,7 @@ export default async function handler(req, res) {
   if (req.method === 'POST') {
     try {
       const {
-        groq_api_key, groq_model, whatsapp_token,
+        groq_api_key, groq_model, whatsapp_token, waba_id,
         inst_language, inst_order_security, inst_size_advisor, inst_brand_policies, inst_custom
       } = req.body;
 
@@ -89,6 +91,7 @@ export default async function handler(req, res) {
       if (groq_api_key !== undefined && groq_api_key !== '') payload.groq_api_key = groq_api_key;
       if (groq_model !== undefined) payload.groq_model = groq_model;
       if (whatsapp_token !== undefined && whatsapp_token !== '') payload.whatsapp_token = whatsapp_token;
+      if (waba_id !== undefined && waba_id !== '') payload.waba_id = waba_id;
       if (inst_language !== undefined) payload.inst_language = inst_language;
       if (inst_order_security !== undefined) payload.inst_order_security = inst_order_security;
       if (inst_size_advisor !== undefined) payload.inst_size_advisor = inst_size_advisor;

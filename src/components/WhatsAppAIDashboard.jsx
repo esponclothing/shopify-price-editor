@@ -8,6 +8,7 @@ import {
   ShoppingBag, Package, Truck, ExternalLink, ChevronDown, ChevronUp, MapPin, Bot, Save, DollarSign,
   ShoppingCart, ShieldCheck, UserCheck, Activity, KeyRound
 } from 'lucide-react';
+import MetaTemplatesManager from './MetaTemplatesManager';
 
 
 function urlBase64ToUint8Array(base64String) {
@@ -1068,6 +1069,18 @@ export default function WhatsAppAIDashboard() {
                 {elevenFitData.abandonedCarts.length}
               </span>
             )}
+          </button>
+          <button
+            onClick={() => setActiveSubTab('meta_templates')}
+            className={`flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 ${
+              activeSubTab === 'meta_templates'
+                ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/30'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+            }`}
+            title="Meta WhatsApp Message Templates"
+          >
+            <FileText className="w-3.5 h-3.5 shrink-0" />
+            <span className="hidden sm:inline">Meta Templates</span>
           </button>
         </div>
 
@@ -2536,6 +2549,11 @@ export default function WhatsAppAIDashboard() {
             </div>
           )}
         </div>
+      )}
+
+      {/* --- META WHATSAPP TEMPLATES MANAGER TAB --- */}
+      {activeSubTab === 'meta_templates' && (
+        <MetaTemplatesManager />
       )}
 
       {/* CUSTOMER ORDERS MODAL / DRAWER (MOBILE BOTTOM SHEET + DESKTOP MODAL) */}
