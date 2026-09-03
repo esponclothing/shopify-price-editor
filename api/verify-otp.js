@@ -35,7 +35,7 @@ export default async function handler(req, res) {
       if (!formattedPhone.startsWith('+')) {
         formattedPhone = '+91' + formattedPhone;
       }
-      fetch(`${supabaseUrl}/rest/v1/otp_analytics`, {
+      fetch(`${supabaseUrl}/rest/v1/otp_logs`, {
         method: 'POST',
         headers: {
           'apikey': supabaseKey,
@@ -45,9 +45,9 @@ export default async function handler(req, res) {
         },
         body: JSON.stringify({
           phone: formattedPhone,
-          ip_address: cleanIp,
+          merchant_id: 'faadf814-2bb0-44df-a6b0-fed13d14961c',
           status: status,
-          store: '11fit'
+          device_id: cleanIp
         })
       }).catch(err => console.error('Supabase logging error:', err));
     }

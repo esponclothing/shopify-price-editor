@@ -122,7 +122,7 @@ export default async function handler(req, res) {
     const supabaseUrl = process.env.SUPABASE_URL;
     const supabaseKey = process.env.SUPABASE_ANON_KEY;
     if (supabaseUrl && supabaseKey) {
-      fetch(`${supabaseUrl}/rest/v1/otp_analytics`, {
+      fetch(`${supabaseUrl}/rest/v1/otp_logs`, {
         method: 'POST',
         headers: {
           'apikey': supabaseKey,
@@ -132,9 +132,9 @@ export default async function handler(req, res) {
         },
         body: JSON.stringify({
           phone: formattedPhone,
-          ip_address: typeof ipAddress === 'string' ? ipAddress.split(',')[0].trim() : ipAddress,
+          merchant_id: 'faadf814-2bb0-44df-a6b0-fed13d14961c',
           status: 'sent',
-          store: '11fit'
+          device_id: typeof ipAddress === 'string' ? ipAddress.split(',')[0].trim() : ipAddress
         })
       }).catch(err => console.error('Supabase logging error:', err));
     }

@@ -34,6 +34,8 @@ app.use('/api', async (req, res) => {
       const handlerModule = await import(`file://${modulePath}`);
       const handler = handlerModule.default;
       if (typeof handler === 'function') {
+        // Mock Vercel req.url behavior (full original URL)
+        req.url = req.originalUrl;
         return await handler(req, res);
       }
     }
