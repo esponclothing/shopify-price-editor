@@ -14,9 +14,10 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Serve API routes
-app.all('/api/*', async (req, res) => {
+app.use('/api', async (req, res) => {
   try {
-    const apiPath = req.path.replace('/api/', ''); // e.g. "shopify/graphql.json"
+    // req.path will be relative to /api, e.g. "/shopify/graphql.json"
+    const apiPath = req.path.replace(/^\//, ''); // strip leading slash
     let modulePath = '';
     
     // Check vercel.json rewrite rule logic manually
@@ -50,8 +51,12 @@ const distPath = path.join(__dirname, 'dist');
 app.use(express.static(distPath));
 
 // Fallback for SPA routing
-app.get('*', (req, res) => {
-  res.sendFile(path.join(distPath, 'index.html'));
+app.use((req, res, next) => {
+  if (req.method === 'GET') {
+    res.sendFile(path.join(distPath, 'index.html'));
+  } else {
+    next();
+  }
 });
 
 const port = process.env.PORT || 3000;
