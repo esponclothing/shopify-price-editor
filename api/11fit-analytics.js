@@ -1,13 +1,11 @@
-import axios from 'axios';
+import axios from './axiosWrapper.js';
 import https from 'https';
 import pg from 'pg';
 const { Client } = pg;
 
 async function fetchNFUData() {
   const urls = [
-    process.env.SUPABASE_NFU_DB_URL || 'postgres://postgres.nfubnpgfwgrlpfhcbjlg:11fit@202612@aws-0-ap-southeast-2.pooler.supabase.com:6543/postgres',
-    'postgres://postgres:11fit@202612@db.nfubnpgfwgrlpfhcbjlg.supabase.co:6543/postgres',
-    'postgres://postgres:11fit@202612@db.nfubnpgfwgrlpfhcbjlg.supabase.co:5432/postgres'
+    process.env.SUPABASE_NFU_DB_URL || 'postgresql://postgres:gEeINngvmFomRYZljhTrKNkKrrjlcrfQ@altaria.proxy.rlwy.net:33107/railway'
   ];
   let otpLogs = [];
   let networkUsers = [];

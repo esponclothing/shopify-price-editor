@@ -1,8 +1,353 @@
-import axios from 'axios';
-import pg from 'pg';
-const { Client } = pg;
+import axios from './axiosWrapper.js';
+import { supabaseFetch } from './supabaseFetch.js';
+
+// api/returns.js
+// Return & Exchange Request API for 11fit
+// Handles: create, list (customer+admin), update status, add tracking, photo upload
+
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
+const ADMIN_SECRET = process.env.ADMIN_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY;
+const RETURN_WINDOW_DAYS = 7; // 7 days from delivered date
+
+function cors(res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-admin-secret, x-merchant-key, Authorization, Accept, X-Requested-With');
+}
+
+async function supabaseRequest(path, options = {}) {
+  const url = `/rest/v1/${path}`; // Use relative path for shim
+  const res = await supabaseFetch(url, options);
+  // supabaseFetch shim already returns { ok, status, data }
+  return res;
+}
+
+async function dispatchWhatsAppStatusNotification(request) {
+  try {
+    const { status, phone, order_name, return_tracking_company, return_tracking_url, exchange_tracking_company, exchange_tracking_url } = request;
+    if (!phone) return;
+
+    let templateName = null;
+    let components = [];
+
+    // Map status to template and build components
+    if (status === 'pending') {
+      templateName = 'return_request_received';
+      components = [ { type: 'body', parameters: [{ type: 'text', text: order_name }] } ];
+    } else if (status === 'approved') {
+      templateName = 'return_request_approved';
+      components = [ { type: 'body', parameters: [{ type: 'text', text: order_name }] } ];
+    } else if (status === 'pickup_scheduled') {
+      templateName = 'return_pickup_scheduled';
+      components = [ 
+        { type: 'body', parameters: [
+          { type: 'text', text: order_name },
+          { type: 'text', text: return_tracking_company || 'our courier' },
+          { type: 'text', text: return_tracking_url || 'N/A' }
+        ] } 
+      ];
+    } else if (status === 'exchange_shipped') {
+      templateName = 'exchange_shipped';
+      components = [ 
+        { type: 'body', parameters: [
+          { type: 'text', text: order_name },
+          { type: 'text', text: exchange_tracking_company || 'our courier' },
+          { type: 'text', text: exchange_tracking_url || 'N/A' }
+        ] } 
+      ];
+    } else if (status === 'completed') {
+      templateName = 'return_completed';
+      components = [ { type: 'body', parameters: [{ type: 'text', text: order_name }] } ];
+    }
+
+    if (!templateName) return; // No notification for this status
+
+    const setRes = await fetch(`${SUPABASE_URL}/rest/v1/whatsapp_settings?select=whatsapp_token,phone_number_id,workflows&order=id.desc&limit=1`, {
+      headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+    });
+    const row = (await setRes.json())[0] || {};
+    const token = row.whatsapp_token || process.env.WHATSAPP_TOKEN || 'EAAM99yhroGsBSGl4Hqpz75Axd5ZAWUF2wVNOMx0yIJCeEehWE7Dwe8qAaFckBDIw95JmL0rHwBK9rgUp9eA6jBdTZB5NBNLpGcu4mmXcvJ1AasaXmfpoTg2fZAZCjOescX0lUM4KDDZCgT8KQI7ZBw9PpuXMz8oCsI4Xh5BCQgiyhRSQBEPrOWZBQnVEIqBngZDZD';
+    const phoneId = row.phone_number_id || process.env.WHATSAPP_PHONE_NUMBER_ID || '1189183190949431';
+    
+    // Check if the workflow is enabled for this template
+    const workflows = row.workflows || {};
+    if (workflows[templateName] === false) {
+      console.log(`WhatsApp Notification skipped (workflow disabled): ${templateName} to ${phone}`);
+      return;
+    }
+
+    const cleanPhone = String(phone).replace(/[^0-9]/g, '');
+    const toPhone = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
+
+    const payload = {
+      messaging_product: 'whatsapp',
+      to: toPhone,
+      type: 'template',
+      template: {
+        name: templateName,
+        language: { code: 'en_US' },
+        components: components
+      }
+    };
+
+    await fetch(`https://graph.facebook.com/v21.0/${phoneId}/messages`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    console.log(`WhatsApp Notification sent: ${templateName} to ${toPhone}`);
+  } catch (err) {
+    console.error('WhatsApp Notification Error:', err.message);
+  }
+}
+
+async function returnsHandler(req, res) {
+  cors(res);
+  if (req.method === 'OPTIONS') return res.status(200).end();
+
+  const isAdmin = Boolean(
+    req.headers['x-admin-secret'] ||
+    req.query.admin_secret ||
+    req.query.admin === 'true'
+  );
+
+  try {
+    // ─────────────────────────────────────────────────────────────
+    // GET: List requests
+    // ─────────────────────────────────────────────────────────────
+    if (req.method === 'GET') {
+      const { phone, id, status, store, admin } = req.query;
+
+      // Single request by ID
+      if (id) {
+        const { ok, data } = await supabaseRequest(
+          `return_requests?id=eq.${encodeURIComponent(id)}&limit=1`,
+          { method: 'GET' }
+        );
+        if (!ok) return res.status(500).json({ error: 'DB error', detail: data });
+        if (!data?.length) return res.status(404).json({ error: 'Request not found' });
+        return res.json({ success: true, request: data[0] });
+      }
+
+      // Admin: list all requests (with optional filter)
+      if (admin === 'true') {
+        if (!isAdmin) return res.status(403).json({ error: 'Unauthorized' });
+        let query = `return_requests?order=created_at.desc`;
+        if (status && status !== 'all') query += `&status=eq.${status}`;
+        if (store) query += `&store=eq.${encodeURIComponent(store)}`;
+        const { ok, data } = await supabaseRequest(query, { method: 'GET' });
+        if (!ok) return res.status(500).json({ error: 'DB error', detail: data });
+        return res.json({ success: true, requests: data || [] });
+      }
+
+      // Customer: list by phone
+      if (phone) {
+        const cleanDigits = phone.replace(/\D/g, '');
+        const last10 = cleanDigits.slice(-10);
+        const phoneFormatted = `+91${last10}`;
+        const { ok, data } = await supabaseRequest(
+          `return_requests?phone=eq.${encodeURIComponent(phoneFormatted)}&order=created_at.desc`,
+          { method: 'GET' }
+        );
+        if (!ok) return res.status(500).json({ error: 'DB error', detail: data });
+        return res.json({ success: true, requests: data || [] });
+      }
+
+      return res.status(400).json({ error: 'Missing required parameter: phone, id, or admin=true' });
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // POST: Create or Update
+    // ─────────────────────────────────────────────────────────────
+    if (req.method === 'POST') {
+      const body = req.body;
+      const { action } = body;
+
+      // ── CREATE a new return/exchange request ──────────────────
+      if (!action || action === 'create') {
+        const {
+          phone, customer_name, email, device_id,
+          order_id, order_name, order_date,
+          line_item_id, product_title, variant_title, sku,
+          quantity, item_price, image_url,
+          request_type, reason, reason_detail,
+          exchange_size, exchange_product_id,
+          store, merchant_key
+        } = body;
+
+        // Validation
+        if (!phone || !order_id || !order_name || !line_item_id || !product_title || !request_type || !reason) {
+          return res.status(400).json({
+            error: 'Missing required fields: phone, order_id, order_name, line_item_id, product_title, request_type, reason'
+          });
+        }
+
+        // 7-day return window check
+        if (order_date) {
+          const deliveredAt = new Date(order_date);
+          const windowEnd = new Date(deliveredAt.getTime() + RETURN_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+          if (new Date() > windowEnd) {
+            return res.status(400).json({
+              error: `Return/exchange window has expired. Requests must be made within ${RETURN_WINDOW_DAYS} days of delivery.`,
+              expired: true
+            });
+          }
+        }
+
+        const cleanDigits = phone.replace(/\D/g, '');
+        const last10 = cleanDigits.slice(-10);
+        const phoneFormatted = `+91${last10}`;
+
+        // Check for duplicate pending request
+        const { data: existing } = await supabaseRequest(
+          `return_requests?phone=eq.${encodeURIComponent(phoneFormatted)}&order_id=eq.${encodeURIComponent(order_id)}&line_item_id=eq.${encodeURIComponent(line_item_id)}&status=in.(pending,approved,pickup_scheduled,in_transit)&limit=1`,
+          { method: 'GET' }
+        );
+        if (existing?.length > 0) {
+          return res.status(409).json({
+            error: 'A return/exchange request for this item is already in progress.',
+            existing_request: existing[0]
+          });
+        }
+
+        const payload = {
+          phone: phoneFormatted,
+          customer_name: customer_name || null,
+          email: email || null,
+          device_id: device_id || null,
+          order_id: String(order_id),
+          order_name,
+          order_date: order_date || null,
+          line_item_id: String(line_item_id),
+          product_title,
+          variant_title: variant_title || null,
+          sku: sku || null,
+          quantity: parseInt(quantity) || 1,
+          item_price: parseFloat(item_price) || null,
+          image_url: image_url || null,
+          request_type,
+          reason,
+          reason_detail: reason_detail || null,
+          exchange_size: exchange_size || null,
+          exchange_product_id: exchange_product_id || null,
+          photo_url: body.photo_url || null,
+          photo_expires_at: body.photo_url ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() : null,
+          status: 'pending',
+          refund_method: 'store_credit',
+          store: store || 'i2tu0d-jc.myshopify.com',
+          merchant_key: merchant_key || null
+        };
+
+        const { ok, data } = await supabaseRequest(
+          'return_requests',
+          {
+            method: 'POST',
+            body: JSON.stringify(payload),
+            headers: { 'Prefer': 'return=representation' }
+          }
+        );
+
+        if (!ok) return res.status(500).json({ error: 'Failed to create request', detail: data });
+
+        const created = Array.isArray(data) ? data[0] : data;
+        
+        // Fire WhatsApp notification asynchronously
+        dispatchWhatsAppStatusNotification(created).catch(e => console.error(e));
+
+        return res.status(201).json({ success: true, request: created });
+      }
+
+      // ── UPDATE STATUS (admin only) ────────────────────────────
+      if (action === 'update_status') {
+        if (!isAdmin) return res.status(403).json({ error: 'Unauthorized' });
+
+        const { id, ids, status, admin_note } = body;
+        const targetIds = ids && Array.isArray(ids) ? ids : (id ? [id] : []);
+        
+        if (targetIds.length === 0 || !status) return res.status(400).json({ error: 'Missing id(s) or status' });
+
+        const validStatuses = ['pending','approved','rejected','pickup_scheduled','in_transit','received','exchange_shipped','completed','cancelled'];
+        if (!validStatuses.includes(status)) {
+          return res.status(400).json({ error: `Invalid status. Must be one of: ${validStatuses.join(', ')}` });
+        }
+
+        const update = { status, updated_at: new Date().toISOString() };
+        if (admin_note !== undefined) update.admin_note = admin_note;
+
+        // Set stage timestamps
+        if (status === 'approved') update.approved_at = new Date().toISOString();
+        if (status === 'rejected') update.rejected_at = new Date().toISOString();
+        if (status === 'pickup_scheduled') update.pickup_at = new Date().toISOString();
+        if (status === 'received') update.received_at = new Date().toISOString();
+        if (status === 'exchange_shipped') update.exchange_shipped_at = new Date().toISOString();
+        if (status === 'completed') update.completed_at = new Date().toISOString();
+
+        const idList = targetIds.map(i => encodeURIComponent(i)).join(',');
+        const { ok, data } = await supabaseRequest(
+          `return_requests?id=in.(${idList})`,
+          { method: 'PATCH', body: JSON.stringify(update), headers: { 'Prefer': 'return=representation' } }
+        );
+
+        if (!ok) return res.status(500).json({ error: 'Failed to update status', detail: data });
+        
+        const updatedRequests = Array.isArray(data) ? data : [data];
+        // Fire WhatsApp notifications asynchronously
+        updatedRequests.forEach(req => dispatchWhatsAppStatusNotification(req).catch(e => console.error(e)));
+
+        return res.json({ success: true, request: updatedRequests });
+      }
+
+      // ── ADD RETURN TRACKING (admin only) ─────────────────────
+      if (action === 'add_tracking') {
+        if (!isAdmin) return res.status(403).json({ error: 'Unauthorized' });
+
+        const {
+          id,
+          return_tracking_number, return_tracking_company, return_tracking_url,
+          exchange_tracking_number, exchange_tracking_company, exchange_tracking_url
+        } = body;
+
+        if (!id) return res.status(400).json({ error: 'Missing id' });
+
+        const cleanUrl = (url) => {
+          if (!url || typeof url !== 'string' || !url.trim()) return url;
+          const t = url.trim();
+          return t.startsWith('http://') || t.startsWith('https://') ? t : `https://${t}`;
+        };
+
+        const update = { updated_at: new Date().toISOString() };
+        if (return_tracking_number) update.return_tracking_number = return_tracking_number;
+        if (return_tracking_company) update.return_tracking_company = return_tracking_company;
+        if (return_tracking_url) update.return_tracking_url = cleanUrl(return_tracking_url);
+        if (exchange_tracking_number) update.exchange_tracking_number = exchange_tracking_number;
+        if (exchange_tracking_company) update.exchange_tracking_company = exchange_tracking_company;
+        if (exchange_tracking_url) update.exchange_tracking_url = cleanUrl(exchange_tracking_url);
+
+        const { ok, data } = await supabaseRequest(
+          `return_requests?id=eq.${encodeURIComponent(id)}`,
+          { method: 'PATCH', body: JSON.stringify(update), headers: { 'Prefer': 'return=representation' } }
+        );
+
+        if (!ok) return res.status(500).json({ error: 'Failed to add tracking', detail: data });
+        return res.json({ success: true, request: Array.isArray(data) ? data[0] : data });
+      }
+
+      return res.status(400).json({ error: `Unknown action: ${action}` });
+    }
+
+    return res.status(405).json({ error: 'Method not allowed' });
+
+  } catch (err) {
+    console.error('Returns API Error:', err);
+    return res.status(500).json({ error: 'Internal server error', message: err.message });
+  }
+}
+
 
 export default async function handler(req, res) {
+  if (req.query.action === 'returns' || req.body?.action === 'returns_init') return returnsHandler(req, res);
+
   res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');

@@ -1,4 +1,4 @@
-import axios from 'axios';
+import axios from './axiosWrapper.js';
 
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://xkiukbebnntjzfilyfmh.supabase.co';
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhraXVrYmVibm50anpmaWx5Zm1oIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4NTIyMjExOCwiZXhwIjoyMTAwNzk4MTE4fQ.bqc4x9ok4pgmcffKPpj-BOUELvAli5weCJtwuL4X7Rc';
@@ -28,14 +28,15 @@ export default async function handler(req, res) {
       let settingsMap = {};
       try {
         const setRes = await axios.get(
-          `${SUPABASE_URL}/rest/v1/whatsapp_chat_settings?select=phone,ai_paused,customer_name,chat_status`,
+          `${SUPABASE_URL}/rest/v1/whatsapp_chat_settings?select=phone,ai_paused,customer_name,chat_status,tags`,
           { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } }
         );
         (setRes.data || []).forEach(s => {
           settingsMap[s.phone] = {
             ai_paused: s.ai_paused || false,
             customer_name: s.customer_name || '',
-            chat_status: s.chat_status || 'open'
+            chat_status: s.chat_status || 'open',
+            tags: s.tags || []
           };
         });
       } catch (_) {
@@ -113,6 +114,7 @@ export default async function handler(req, res) {
             hours_elapsed: Math.round(hoursElapsed * 10) / 10,
             ai_paused: settings.ai_paused || false,
             chat_status: settings.chat_status || 'open',
+            tags: settings.tags || [],
             has_order: orderInfo.has_order,
             order_count: orderInfo.order_count,
             order_status: orderInfo.order_status,
@@ -140,10 +142,10 @@ export default async function handler(req, res) {
     if (!phone) return res.status(400).json({ error: 'phone parameter required' });
     try {
       const memRes = await axios.get(
-        `${SUPABASE_URL}/rest/v1/whatsapp_chat_memory?phone=eq.${encodeURIComponent(phone)}&select=*&order=created_at.asc&limit=100`,
+        `${SUPABASE_URL}/rest/v1/whatsapp_chat_memory?phone=eq.${encodeURIComponent(phone)}&select=*&order=created_at.desc&limit=100`,
         { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } }
       );
-      const messages = memRes.data || [];
+      const messages = (memRes.data || []).reverse();
       return res.status(200).json({ success: true, messages });
     } catch (err) {
       console.error('Failed to fetch messages:', err.response?.data || err.message);
@@ -278,8 +280,23 @@ export default async function handler(req, res) {
       }
     }
 
-    // 3B. Send Manual Message or Template via WhatsApp Graph API
+    // 3B. Send Manual Message, Template, or Internal Note
     if (postAction === 'send_message' || postAction === 'send_template') {
+      
+      // Handle Internal Private Note
+      if (type === 'internal_note') {
+        try {
+          await axios.post(
+            `${SUPABASE_URL}/rest/v1/whatsapp_chat_memory`,
+            { phone, role: 'internal_note', content: text || '' },
+            { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json' } }
+          );
+          return res.status(200).json({ success: true, message_id: 'internal', content: text });
+        } catch (err) {
+          return res.status(500).json({ error: 'Failed to save internal note' });
+        }
+      }
+
       let token = process.env.WHATSAPP_TOKEN;
       try {
         const settingsRes = await axios.get(
@@ -313,7 +330,18 @@ export default async function handler(req, res) {
         payload.type = 'template';
         // Build template components with variable params if provided
         const components = [];
-        if (Array.isArray(template_params) && template_params.length > 0) {
+        if (template_name === 'abandoned_cart_v4' && Array.isArray(template_params) && template_params.length >= 2) {
+          components.push({
+            type: 'body',
+            parameters: template_params.slice(0, 2).map(p => ({ type: 'text', text: String(p || '') }))
+          });
+          components.push({
+            type: 'button',
+            sub_type: 'url',
+            index: '0',
+            parameters: [{ type: 'text', text: String(template_params[2] || 'all') }]
+          });
+        } else if (Array.isArray(template_params) && template_params.length > 0) {
           components.push({
             type: 'body',
             parameters: template_params.map(p => ({ type: 'text', text: String(p || '') }))
@@ -328,7 +356,18 @@ export default async function handler(req, res) {
         // Direct template action (from 24hr-closed fallback)
         payload.type = 'template';
         const components = [];
-        if (Array.isArray(template_params) && template_params.length > 0) {
+        if (template_name === 'abandoned_cart_v4' && Array.isArray(template_params) && template_params.length >= 2) {
+          components.push({
+            type: 'body',
+            parameters: template_params.slice(0, 2).map(p => ({ type: 'text', text: String(p || '') }))
+          });
+          components.push({
+            type: 'button',
+            sub_type: 'url',
+            index: '0',
+            parameters: [{ type: 'text', text: String(template_params[2] || 'all') }]
+          });
+        } else if (Array.isArray(template_params) && template_params.length > 0) {
           components.push({
             type: 'body',
             parameters: template_params.map(p => ({ type: 'text', text: String(p || '') }))

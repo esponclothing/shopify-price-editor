@@ -1,4 +1,4 @@
-import axios from 'axios';
+import axios from './axiosWrapper.js';
 import https from 'https';
 
 export default async function handler(req, res) {

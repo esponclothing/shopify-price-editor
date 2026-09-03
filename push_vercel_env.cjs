@@ -8,9 +8,11 @@ const envs = {
   WHATSAPP_PHONE_NUMBER_ID: '1189183190949431',
   WHATSAPP_VERIFY_TOKEN: '11fit_webhook_2026',
   WHATSAPP_TOKEN: 'EAAM99yhroGsBR1rm4kaPOHQRtcuoMjZAdpcz2F4K1AXjYYfvtGLwttdBMO2fdaUI4lzB0fG0iaZAabFdgP9aA4GCXtw0t4zLmwZBg0ShVCJBZBYZBVYnmGkb2f9XZAXcD9evV1hoAcF9DGfSYtTCfTzzcC9iZCmWZBTiyMZC4ZBnmvOVqPfE1ZCJE3Lc3ZBs3egltQZDZD',
-  VITE_GROQ_API_KEY: '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',
+  VITE_GROQ_API_KEY: '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',
   VITE_SHOPIFY_STORE_URL: 'i2tu0d-jc.myshopify.com',
-  VITE_SHOPIFY_ACCESS_TOKEN: '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'
+  VITE_SHOPIFY_ACCESS_TOKEN: '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',
+  SHOPIFY_ACCESS_TOKEN: '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',
+  ADMIN_SECRET: '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'
 };
 
 console.log('Pushing environment variables to Vercel production...');
@@ -22,8 +24,9 @@ for (const [key, value] of Object.entries(envs)) {
     try {
       execSync(`npx vercel env rm ${key} production -y`, { stdio: 'ignore' });
     } catch (e) {}
+    const typeFlag = key.startsWith('VITE_') ? '--type config' : '';
     // Add new value via stdin
-    execSync(`npx vercel env add ${key} production`, {
+    execSync(`npx vercel env add ${key} production ${typeFlag}`, {
       input: value,
       stdio: ['pipe', 'inherit', 'inherit']
     });

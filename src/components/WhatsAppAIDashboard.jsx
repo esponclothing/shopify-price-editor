@@ -6,11 +6,12 @@ import {
   Pause, ShieldAlert, BarChart3, Users, ArrowLeft, Check, CheckCheck,
   Bell, BellRing, Camera, StopCircle, Upload, Trash2,
   ShoppingBag, Package, Truck, ExternalLink, ChevronDown, ChevronUp, MapPin, Bot, Save, DollarSign,
-  ShoppingCart, ShieldCheck, UserCheck, Activity, KeyRound
+  ShoppingCart, ShieldCheck, UserCheck, Activity, KeyRound, Megaphone, Plus, Sparkles, Tags, Info
 } from 'lucide-react';
 import MetaTemplatesManager from './MetaTemplatesManager';
-
-
+import ChatbotFlowBuilder from './ChatbotFlowBuilder';
+import OutboundCallOverlay from './OutboundCallOverlay';
+import IncomingCallOverlay from './IncomingCallOverlay';
 function urlBase64ToUint8Array(base64String) {
   const padding = '='.repeat((4 - base64String.length % 4) % 4);
   const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
@@ -22,13 +23,15 @@ function urlBase64ToUint8Array(base64String) {
   return outputArray;
 }
 
-export default function WhatsAppAIDashboard() {
-  const [activeSubTab, setActiveSubTab] = useState('inbox'); // 'inbox' | 'logs'
+export default function WhatsAppAIDashboard({ preSelectPhone }) {
+  const [activeSubTab, setActiveSubTab] = useState('inbox'); // 'inbox' | 'logs' | 'flow_builder'
   const [showLockInfo, setShowLockInfo] = useState(false); // toggle 24h popup
+  const preSelectDoneRef = useRef(false);
 
   // --- INBOX STATE ---
   const [chats, setChats] = useState([]);
   const [selectedChat, setSelectedChat] = useState(null);
+  const [outboundCall, setOutboundCall] = useState(null); // { phone, customerName } when active
   const [messages, setMessages] = useState([]);
   const [loadingChats, setLoadingChats] = useState(false);
   const [loadingMessages, setLoadingMessages] = useState(false);
@@ -70,8 +73,14 @@ export default function WhatsAppAIDashboard() {
   const [instSizeAdvisor, setInstSizeAdvisor] = useState('');
   const [instBrandPolicies, setInstBrandPolicies] = useState('');
   const [instCustom, setInstCustom] = useState('');
-  const [instCategoryTab, setInstCategoryTab] = useState('language'); // 'language' | 'security' | 'size' | 'brand' | 'custom'
+  const [instKnowledgeBase, setInstKnowledgeBase] = useState('');
+  const [instCategoryTab, setInstCategoryTab] = useState('language'); // 'language' | 'security' | 'size' | 'brand' | 'custom' | 'knowledge_base'
   const [savingInst, setSavingInst] = useState(false);
+
+  // --- PRIVATE NOTE & CANNED RESPONSES ---
+  const [isPrivateNote, setIsPrivateNote] = useState(false);
+  const [cannedResponses, setCannedResponses] = useState([]);
+  const [showQuickRepliesModal, setShowQuickRepliesModal] = useState(false);
 
   // --- LOGS & ANALYTICS STATE ---
   const [executions, setExecutions] = useState([]);
@@ -82,9 +91,73 @@ export default function WhatsAppAIDashboard() {
     ignored_count: 0,
     avg_duration: 0
   });
+
+  // --- CONTACTS & TAGS STATE ---
+  const [contacts, setContacts] = useState([]);
+  const [loadingContacts, setLoadingContacts] = useState(false);
+  const [contactsSearch, setContactsSearch] = useState('');
   const [loadingLogs, setLoadingLogs] = useState(false);
   const [filterStatus, setFilterStatus] = useState('ALL');
   const [searchQuery, setSearchQuery] = useState('');
+  const [tagFilter, setTagFilter] = useState('');
+  const [selectedContacts, setSelectedContacts] = useState([]);
+  const [isBroadcastModalOpen, setIsBroadcastModalOpen] = useState(false);
+  const [broadcastTemplate, setBroadcastTemplate] = useState('');
+  const [sendingBroadcast, setSendingBroadcast] = useState(false);
+  const [broadcastMessage, setBroadcastMessage] = useState('');
+
+  const handleSelectContact = (phone) => {
+    setSelectedContacts(prev => 
+      prev.includes(phone) ? prev.filter(p => p !== phone) : [...prev, phone]
+    );
+  };
+  
+  const handleSelectAllContacts = (filteredContacts) => {
+    if (selectedContacts.length === filteredContacts.length && filteredContacts.length > 0) {
+      setSelectedContacts([]); // deselect all
+    } else {
+      setSelectedContacts(filteredContacts.map(c => c.phone));
+    }
+  };
+  
+  const openBroadcastModal = async () => {
+    setIsBroadcastModalOpen(true);
+    if (metaTemplates.length === 0) {
+      try {
+        const res = await fetch('/api/whatsapp-templates');
+        const data = await res.json();
+        if (data.templates) setMetaTemplates(data.templates.filter(t => t.status === 'APPROVED'));
+      } catch (e) {
+        console.error(e);
+      }
+    }
+  };
+
+  const sendBroadcast = async () => {
+    if (!broadcastTemplate || selectedContacts.length === 0) return;
+    setSendingBroadcast(true);
+    try {
+      const res = await fetch('/api/whatsapp-broadcast', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'send_direct',
+          phones: selectedContacts,
+          template_name: broadcastTemplate
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setBroadcastMessage(`Successfully sent broadcast to ${selectedContacts.length} users!`);
+        setTimeout(() => { setIsBroadcastModalOpen(false); setBroadcastMessage(''); setSelectedContacts([]); }, 2000);
+      } else {
+        setBroadcastMessage('Failed to send: ' + data.error);
+      }
+    } catch (e) {
+      setBroadcastMessage('Failed to send broadcast');
+    }
+    setSendingBroadcast(false);
+  };
 
   // --- 11FIT ABANDONED CARTS (MOBILE NUMBER ONLY) & OTP ANALYTICS STATE ---
   const [elevenFitData, setElevenFitData] = useState({
@@ -124,6 +197,138 @@ export default function WhatsAppAIDashboard() {
     return ordersSummaryMap[digits] || null;
   };
 
+  const applyInstructionsLocally = () => {
+    setSavingInst(true);
+    setTimeout(() => {
+      setSavingInst(false);
+      alert('These configurations are typically saved securely in the backend DB / Supabase.');
+    }, 800);
+  };
+
+  // --- AI CO-PILOT LOGIC ---
+  const [isRewriting, setIsRewriting] = useState(false);
+  const [isGeneratingSuggestions, setIsGeneratingSuggestions] = useState(false);
+  const [aiSuggestions, setAiSuggestions] = useState([]);
+  
+  const handleRewrite = async () => {
+    if (!replyText || replyText.trim() === '') return;
+    setIsRewriting(true);
+    try {
+      const res = await fetch('/api/whatsapp-ai?action=rewrite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'rewrite', text: replyText })
+      });
+      const data = await res.json();
+      if (data.success && data.rewritten) {
+        setReplyText(data.rewritten);
+      } else {
+        alert('AI Co-Pilot failed to rewrite text. Try again later.');
+      }
+    } catch (e) {
+      console.error(e);
+      alert('AI Co-Pilot is currently offline.');
+    }
+    setIsRewriting(false);
+  };
+
+  const handleGenerateSuggestions = async () => {
+    if (!selectedChat || !messages || messages.length === 0) {
+      alert('No messages loaded for this chat.');
+      return;
+    }
+    
+    const userMessages = messages.filter(m => m.role === 'user');
+    if (userMessages.length === 0) {
+      alert('No customer messages found to generate suggestions for.');
+      return;
+    }
+
+    // Format last 5 messages for context
+    const recentMsgs = messages.slice(-5).map(m => `${m.role === 'user' ? 'Customer' : 'Agent'}: ${m.content}`).join('\n');
+
+    setIsGeneratingSuggestions(true);
+    try {
+      const res = await fetch('/api/whatsapp-ai?action=suggest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'suggest', text: recentMsgs })
+      });
+      const data = await res.json();
+      if (data.success && data.suggestions && data.suggestions.length > 0) {
+        setAiSuggestions(data.suggestions);
+      } else {
+        alert('AI Co-Pilot failed to generate suggestions. Try again later.');
+      }
+    } catch (e) {
+      console.error(e);
+      alert('AI Co-Pilot is currently offline.');
+    }
+    setIsGeneratingSuggestions(false);
+  };
+
+  // --- FETCH CONTACTS ---
+  const fetchContacts = async () => {
+    setLoadingContacts(true);
+    try {
+      const res = await fetch('/api/whatsapp-settings?action=contacts');
+      const data = await res.json();
+      setContacts(data.contacts || []);
+    } catch (err) {
+      console.error('Failed to fetch contacts:', err);
+    }
+    setLoadingContacts(false);
+  };
+
+  useEffect(() => {
+    if (activeSubTab === 'contacts' && contacts.length === 0) fetchContacts();
+  }, [activeSubTab]);
+
+  // --- FETCH BROADCASTS HISTORY ---
+  const [broadcastsHistory, setBroadcastsHistory] = useState([]);
+  const [loadingBroadcasts, setLoadingBroadcasts] = useState(false);
+  const [selectedBroadcastLogs, setSelectedBroadcastLogs] = useState(null);
+
+  const fetchBroadcastsHistory = async () => {
+    setLoadingBroadcasts(true);
+    try {
+      const res = await fetch('/api/whatsapp-broadcast');
+      const data = await res.json();
+      setBroadcastsHistory(data.broadcasts || []);
+    } catch (err) {
+      console.error('Failed to fetch broadcasts:', err);
+    }
+    setLoadingBroadcasts(false);
+  };
+
+  const fetchQuickReplies = async () => {
+    try {
+      const res = await fetch('/api/whatsapp-settings?action=quick_replies');
+      if (res.ok) {
+        const data = await res.json();
+        setCannedResponses(data.replies || []);
+      }
+    } catch (err) {
+      console.error('Failed to fetch quick replies:', err);
+    }
+  };
+
+  const fetchBroadcastLogs = async (id) => {
+    try {
+      const res = await fetch(`/api/whatsapp-broadcast?id=${id}`);
+      const data = await res.json();
+      if (data.success) {
+        setSelectedBroadcastLogs(data.logs || []);
+      }
+    } catch (err) {
+      console.error('Failed to fetch broadcast logs:', err);
+    }
+  };
+
+  useEffect(() => {
+    if (activeSubTab === 'broadcasts' && broadcastsHistory.length === 0) fetchBroadcastsHistory();
+  }, [activeSubTab]);
+
   // Play audible notification chime on mobile / desktop
   const playAlertBeep = () => {
     try {
@@ -155,7 +360,7 @@ export default function WhatsAppAIDashboard() {
         });
       }
       // Send subscription to backend
-      await fetch('/api/webpush', {
+      await fetch('/api/11fit-analytics?action=webpush', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'subscribe', subscription: sub })
@@ -268,28 +473,7 @@ export default function WhatsAppAIDashboard() {
   };
 
   const playCriticalAlertBeep = () => {
-    try {
-      const ctx = new (window.AudioContext || window.webkitAudioContext)();
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = 'sawtooth'; // Harsh siren sound
-      
-      const duration = 5.0; // 5 seconds long alert
-      for (let t = 0; t < duration; t += 0.5) {
-        osc.frequency.setValueAtTime(800, ctx.currentTime + t); 
-        osc.frequency.linearRampToValueAtTime(1200, ctx.currentTime + t + 0.25);
-        osc.frequency.linearRampToValueAtTime(800, ctx.currentTime + t + 0.5);
-      }
-      
-      gain.gain.setValueAtTime(0.4, ctx.currentTime);
-      gain.gain.setValueAtTime(0.4, ctx.currentTime + duration - 0.5);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
-      
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start();
-      osc.stop(ctx.currentTime + duration);
-    } catch (_) {}
+    // Siren removed per user request
   };
 
   // --- FETCH FUNCTIONS ---
@@ -369,22 +553,21 @@ export default function WhatsAppAIDashboard() {
         const data = await res.json();
         const incoming = data.messages || [];
         if (isQuiet) {
-          // Silent update: only add truly NEW messages at the end, no scroll
+          // Silent update
           setMessages(prev => {
+            if (prev.length === 0) return incoming;
             const hasOptimistic = prev.some(m => m._sending);
-            if (hasOptimistic) {
-              return incoming;
-            }
-            if (incoming.length <= prev.length) return prev; // nothing new
-            // Check if last known message matches — if yes, just append new tail
+            if (hasOptimistic) return incoming;
+            
             const prevLastId = prev[prev.length - 1]?.id;
             const incomingLastId = incoming[incoming.length - 1]?.id;
-            if (incomingLastId === prevLastId) return prev; // identical
-            // New messages arrived — append only the new ones, preserve scroll
-            const newOnes = incoming.slice(prev.length);
-            if (newOnes.length > 0) {
-              shouldScrollRef.current = true; // new message came in, scroll to it
+            
+            if (incomingLastId === prevLastId && prev.length === incoming.length) {
+              return prev; // identical
             }
+            
+            // New messages arrived or array size changed
+            shouldScrollRef.current = true;
             return incoming;
           });
         } else {
@@ -600,6 +783,7 @@ export default function WhatsAppAIDashboard() {
         setInstSizeAdvisor(data.inst_size_advisor || '');
         setInstBrandPolicies(data.inst_brand_policies || '');
         setInstCustom(data.inst_custom || '');
+        setInstKnowledgeBase(data.inst_knowledge_base || '');
         if (data.workflows) setWorkflows(data.workflows);
       }
     } catch (_) {}
@@ -650,7 +834,8 @@ export default function WhatsAppAIDashboard() {
           inst_order_security: instOrderSecurity,
           inst_size_advisor: instSizeAdvisor,
           inst_brand_policies: instBrandPolicies,
-          inst_custom: instCustom
+          inst_custom: instCustom,
+          inst_knowledge_base: instKnowledgeBase
         })
       });
       const data = await res.json();
@@ -718,12 +903,31 @@ export default function WhatsAppAIDashboard() {
 
   const handleSendAbCartRecovery = async (cart) => {
     if (!cart || !cart.phone) return;
+    
+    let cleanPhone = String(cart.phone).replace(/\D/g, '');
+    if (cleanPhone.length === 10) cleanPhone = '91' + cleanPhone;
+    if (cleanPhone.startsWith('0') && cleanPhone.length === 11) cleanPhone = '91' + cleanPhone.slice(1);
+
     const rawName = cart.customer_name || cart.cart_details?.customer?.first_name || cart.cart_details?.shipping_address?.first_name || 'there';
     const name = rawName.split(' ')[0];
     const amountVal = cart.cart_details?.total_price || cart.total_price || 0;
     const amount = (parseFloat(amountVal) / (String(amountVal).includes('.') ? 1 : 100)).toFixed(2);
+    
+    // Generate Product Handle for the Button URL parameter
+    const items = cart.cart_details?.line_items || cart.line_items || [];
+    let productHandle = 'all';
+    
+    if (items.length > 0 && items[0].handle) {
+      // Use the actual Shopify handle fetched from the backend
+      productHandle = items[0].handle;
+    } else if (items.length > 0) {
+      // Fallback: Strip variant details (usually appended after " - ") and slugify
+      const rawItemTitle = items[0].title || '';
+      const firstItemTitle = rawItemTitle.includes(' - ') ? rawItemTitle.substring(0, rawItemTitle.lastIndexOf(' - ')) : rawItemTitle;
+      productHandle = firstItemTitle ? firstItemTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') : 'all';
+    }
 
-    const confirmed = window.confirm(`Send "Abandoned Cart Recovery" template to ${cart.phone}?\n\nCustomer: ${name}\nAmount: ₹${amount}`);
+    const confirmed = window.confirm(`Send "Abandoned Cart Recovery" template to +${cleanPhone}?\n\nCustomer: ${name}\nAmount: ₹${amount}\nProduct Link: /products/${productHandle}`);
     if (!confirmed) return;
 
     try {
@@ -732,9 +936,9 @@ export default function WhatsAppAIDashboard() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'send_template',
-          phone: cart.phone,
-          template_name: 'abandoned_cart_v2',
-          template_params: [name, amount]
+          phone: cleanPhone,
+          template_name: 'abandoned_cart_v4',
+          template_params: [name, amount, productHandle]
         })
       });
       if (res.ok) {
@@ -754,6 +958,7 @@ export default function WhatsAppAIDashboard() {
     fetchExecutions(false);
     fetchInstructions();
     fetchMetaTemplates();
+    fetchQuickReplies();
     fetchElevenFitAnalytics(false);
     const interval = setInterval(() => {
       fetchChats(true);
@@ -796,6 +1001,21 @@ export default function WhatsAppAIDashboard() {
   useEffect(() => {
     shouldScrollRef.current = true;
   }, [selectedChat?.phone]);
+
+  // Auto-select a chat when navigating from Phone Order Lookup
+  useEffect(() => {
+    if (!preSelectPhone || preSelectDoneRef.current || chats.length === 0) return;
+    const digits = preSelectPhone.replace(/\D/g, '');
+    const match = chats.find(c => {
+      const cd = (c.phone || '').replace(/\D/g, '');
+      return cd.includes(digits) || digits.includes(cd);
+    });
+    if (match) {
+      preSelectDoneRef.current = true;
+      setActiveSubTab('inbox');
+      setSelectedChat(match);
+    }
+  }, [preSelectPhone, chats]);
 
   // --- 24 HOUR CLOSING TIME CALCULATION ---
   const get24HourStatus = (chat) => {
@@ -934,12 +1154,14 @@ export default function WhatsAppAIDashboard() {
     if (replyType === 'text' && !replyText.trim()) return;
     if ((replyType === 'image' || replyType === 'audio') && !mediaUrl.trim()) return;
 
+    const actualReplyType = isPrivateNote ? 'internal_note' : replyType;
+
     // Optimistic bubble — appears instantly in chat
     const optimisticText = replyType === 'template' ? '📋 Template message sent' : (replyText || mediaUrl);
     const optimisticMsg = {
       id: `_opt_${Date.now()}`,
       phone: selectedChat.phone,
-      role: 'assistant',
+      role: isPrivateNote ? 'internal_note' : 'assistant',
       content: optimisticText,
       created_at: new Date().toISOString(),
       _sending: true
@@ -955,7 +1177,7 @@ export default function WhatsAppAIDashboard() {
         body: JSON.stringify({
           action: 'send_message',
           phone: selectedChat.phone,
-          type: replyType,
+          type: actualReplyType,
           text: replyText,
           media_url: mediaUrl,
           template_name: selectedTemplate,
@@ -1002,7 +1224,8 @@ export default function WhatsAppAIDashboard() {
       !inboxSearch ||
       c.phone?.toLowerCase().includes(inboxSearch.toLowerCase()) ||
       c.last_message?.toLowerCase().includes(inboxSearch.toLowerCase()) ||
-      c.customer_name?.toLowerCase().includes(inboxSearch.toLowerCase());
+      c.customer_name?.toLowerCase().includes(inboxSearch.toLowerCase()) ||
+      (Array.isArray(c.tags) && c.tags.some(t => t.toLowerCase().includes(inboxSearch.toLowerCase())));
     const matchesStatus =
       chatStatusFilter === 'all' ||
       (chatStatusFilter === 'open' && (c.chat_status || 'open') === 'open') ||
@@ -1019,7 +1242,7 @@ export default function WhatsAppAIDashboard() {
   };
 
   const KNOWN_TEMPLATES = {
-    'abandoned_cart_v2':           { label: '🛒 Abandoned Cart Recovery',         params: ['Customer Name', 'Cart Value (₹)'] },
+    'abandoned_cart_v4':           { label: '🛒 Abandoned Cart Recovery',         params: ['Customer Name', 'Cart Value (₹)', 'Product Handle'] },
     'combo_offer_reengage_v2':     { label: '🛍️ Special Combo Offer',             params: ['Customer Name'] },
     'order_status_check_v1':       { label: 'ℹ️ Order Status Check',              params: ['Name', 'Order #', 'Status', 'Details/Tracking'] },
     'order_confirm_prepaid_v1':    { label: '✅ Order Confirmed (Prepaid)',        params: ['Name', 'Order #', 'Items', 'Amount Paid (₹)', 'Address'] },
@@ -1060,7 +1283,7 @@ export default function WhatsAppAIDashboard() {
     const cartAmount = latestCart ? (parseFloat(cartVal) / (String(cartVal).includes('.') ? 1 : 100)).toFixed(2) : '0';
 
     switch (templateId) {
-      case 'abandoned_cart_v2':           return [name, cartAmount];
+      case 'abandoned_cart_v4':           return [name, cartAmount, 'all'];
       case 'combo_offer_reengage_v2':     return [name];
       case 'order_status_check_v1': {
         let status = 'Processing';
@@ -1172,8 +1395,8 @@ export default function WhatsAppAIDashboard() {
   return (
     <div className="flex-1 flex flex-col min-h-0 w-full h-full bg-[#0B0F19]">
       {/* COMPACT TOP SUB-TAB & ALERTS NAV BAR */}
-      <div className="flex items-center justify-between gap-3 bg-[#0F172A] px-3.5 py-2.5 border-b border-slate-800 shrink-0 shadow-sm z-10">
-        <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800">
+      <div className="flex items-center justify-between gap-3 bg-[#0F172A] px-3.5 py-2.5 border-b border-slate-800 shrink-0 shadow-sm z-10 w-full overflow-hidden">
+        <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800 overflow-x-auto flex-nowrap flex-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
           <button
             onClick={() => setActiveSubTab('inbox')}
             className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
@@ -1251,6 +1474,42 @@ export default function WhatsAppAIDashboard() {
             <Activity className="w-3.5 h-3.5 shrink-0" />
             <span className="hidden sm:inline">Automated Workflows</span>
           </button>
+          <button
+            onClick={() => setActiveSubTab('flow_builder')}
+            className={`flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 ${
+              activeSubTab === 'flow_builder'
+                ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/30'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+            }`}
+            title="Flow Builder"
+          >
+            <Zap className="w-3.5 h-3.5 shrink-0" />
+            <span className="hidden sm:inline">Flow Builder</span>
+          </button>
+          <button
+            onClick={() => setActiveSubTab('contacts')}
+            className={`flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 ${
+              activeSubTab === 'contacts'
+                ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/30'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+            }`}
+            title="Audience & CRM"
+          >
+            <Users className="w-3.5 h-3.5 shrink-0" />
+            <span className="hidden sm:inline">Audience & CRM</span>
+          </button>
+          <button
+            onClick={() => setActiveSubTab('broadcasts')}
+            className={`flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 ${
+              activeSubTab === 'broadcasts'
+                ? 'bg-fuchsia-600 text-white shadow-lg shadow-fuchsia-600/30'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+            }`}
+            title="Campaigns"
+          >
+            <Megaphone className="w-3.5 h-3.5 shrink-0" />
+            <span className="hidden sm:inline">Campaigns</span>
+          </button>
         </div>
 
         <button
@@ -1273,7 +1532,7 @@ export default function WhatsAppAIDashboard() {
           <div className="flex items-center gap-2">
             <ShoppingCart className="w-5 h-5 shrink-0 animate-bounce" />
             <span className="text-xs sm:text-sm font-extrabold tracking-wide">
-              🚨 NEW ABANDONED CART ALERT: Customer {newAbCartNotification.phone} just added order worth ₹{newAbCartNotification.price}!
+              NEW ABANDONED CART ALERT: Customer {newAbCartNotification.phone} just added order worth ₹{newAbCartNotification.price}!
             </span>
           </div>
           <div className="flex items-center gap-2 shrink-0">
@@ -1302,7 +1561,7 @@ export default function WhatsAppAIDashboard() {
       {activeSubTab === 'inbox' && (
         <div className="relative flex-1 min-h-0 lg:grid lg:grid-cols-12 lg:gap-6 lg:p-6">
           {/* LEFT PANE: CHAT LIST - full height on mobile, grid col on desktop */}
-          <div className={`lg:col-span-4 bg-slate-900/90 lg:rounded-2xl border-r lg:border border-slate-800 flex flex-col overflow-hidden shadow-xl h-full ${selectedChat ? 'hidden lg:flex' : 'flex'}`}>
+          <div className={`lg:col-span-3 bg-slate-900/90 lg:rounded-2xl border-r lg:border border-slate-800 flex flex-col overflow-hidden shadow-xl h-full ${selectedChat ? 'hidden lg:flex' : 'flex'}`}>
             {/* SEARCH BOX & COLLAPSIBLE FILTER BUTTON */}
             <div className="p-2.5 border-b border-slate-800 bg-slate-950/40 space-y-2 shrink-0">
               <div className="flex items-center gap-1.5">
@@ -1475,6 +1734,15 @@ export default function WhatsAppAIDashboard() {
                                   {formatPhone(chat.phone)}
                                 </span>
                               )}
+                              {chat.tags && chat.tags.length > 0 && (
+                                <div className="flex gap-1 mt-0.5 flex-wrap">
+                                  {chat.tags.map(t => (
+                                    <span key={t} className="text-[9px] px-1.5 py-0.5 rounded-md bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 whitespace-nowrap font-bold">
+                                      {t}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
                             </div>
                             {chat.has_order && (
                               <button
@@ -1516,6 +1784,11 @@ export default function WhatsAppAIDashboard() {
                               ✓ <span className="hidden sm:inline">Solved</span>
                             </span>
                           )}
+                          {chat.chat_status === 'urgent' && (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-rose-500/20 text-rose-400 border border-rose-500/30 shadow-[0_0_8px_rgba(225,29,72,0.3)] animate-pulse">
+                              🚨 <span className="hidden sm:inline">Urgent</span>
+                            </span>
+                          )}
 
                           <button
                             type="button"
@@ -1542,14 +1815,16 @@ export default function WhatsAppAIDashboard() {
                               </>
                             )}
                           </button>
-                          <a
-                            href={`tel:+${chat.phone}`}
-                            onClick={(e) => e.stopPropagation()}
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setOutboundCall({ phone: chat.phone, customerName: chat.customer_name || '' });
+                            }}
                             className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-slate-800 hover:bg-emerald-600 text-slate-300 hover:text-white border border-slate-700 transition-colors ml-auto"
-                            title={`Call ${formatPhone(chat.phone)} directly from mobile`}
+                            title={`WhatsApp Call ${formatPhone(chat.phone)}`}
                           >
                             <Phone className="w-3 h-3" />
-                          </a>
+                          </button>
                         </div>
                       </div>
                     </div>
@@ -1559,8 +1834,8 @@ export default function WhatsAppAIDashboard() {
             </div>
           </div>
 
-          {/* RIGHT PANE: fixed full-screen on mobile, grid col on desktop */}
-          <div className={`lg:col-span-8 bg-slate-900/90 lg:rounded-2xl border-l lg:border border-slate-800 flex flex-col overflow-hidden shadow-xl h-full ${!selectedChat ? 'hidden lg:flex' : 'flex'}`}>
+          {/* RIGHT PANE: ACTIVE CHAT THREAD */}
+          <div className={`lg:col-span-6 bg-slate-900/90 lg:rounded-2xl border-l lg:border border-slate-800 flex flex-col overflow-hidden shadow-xl h-full ${!selectedChat ? 'hidden lg:flex' : 'flex'}`}>
             {selectedChat ? (
               <>
                 {/* ACTIVE CHAT HEADER (COMPACT ON MOBILE: ICONS ONLY TO SAVE SPACE) */}
@@ -1575,13 +1850,24 @@ export default function WhatsAppAIDashboard() {
                     >
                       <ArrowLeft className="w-4 h-4" />
                     </button>
-                    <h4
-                      onClick={() => handleOpenCustomerOrders(selectedChat.phone)}
-                      className="font-bold text-white text-sm sm:text-base truncate hover:text-emerald-400 transition-colors cursor-pointer"
-                      title="Click customer name to view Shopify Orders"
-                    >
-                      {selectedChat.customer_name ? `${selectedChat.customer_name} (${formatPhone(selectedChat.phone)})` : formatPhone(selectedChat.phone)}
-                    </h4>
+                    <div className="flex flex-col min-w-0">
+                      <h4
+                        onClick={() => handleOpenCustomerOrders(selectedChat.phone)}
+                        className="font-bold text-white text-sm sm:text-base truncate hover:text-emerald-400 transition-colors cursor-pointer"
+                        title="Click customer name to view Shopify Orders"
+                      >
+                        {selectedChat.customer_name ? `${selectedChat.customer_name} (${formatPhone(selectedChat.phone)})` : formatPhone(selectedChat.phone)}
+                      </h4>
+                      {selectedChat.tags && selectedChat.tags.length > 0 && (
+                        <div className="flex gap-1 mt-0.5">
+                          {selectedChat.tags.map(t => (
+                            <span key={t} className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 whitespace-nowrap font-bold">
+                              🏷️ {t}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
 
                   {/* RIGHT: ICON BUTTONS ON MOBILE, ICON+TEXT ON DESKTOP */}
@@ -1598,13 +1884,13 @@ export default function WhatsAppAIDashboard() {
                     </button>
 
                     {/* 2. Call Customer Button */}
-                    <a
-                      href={`tel:+${selectedChat.phone}`}
+                    <button
+                      onClick={() => setOutboundCall({ phone: selectedChat.phone, customerName: selectedChat.customer_name || '' })}
                       className="p-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white transition-all shrink-0"
-                      title="Call Customer"
+                      title="WhatsApp Call Customer (via API)"
                     >
                       <Phone className="w-3.5 h-3.5" />
-                    </a>
+                    </button>
 
                     {/* 3. Clickable 24H Lock pill with popup */}
                     <div className="relative">
@@ -1717,31 +2003,37 @@ export default function WhatsAppAIDashboard() {
                   ) : (
                     messages.map((msg, i) => {
                       const isAI = msg.role === 'assistant';
+                      const isInternalNote = msg.role === 'internal_note';
+                      const isOutgoing = isAI || isInternalNote;
+                      
                       // WhatsApp-style tick status for AI/manual messages
                       const getMsgStatus = () => {
                         if (msg._sending) return 'sending'; // clock icon, grey
+                        if (isInternalNote) return 'sent'; // notes don't get read receipts
                         // Did any user message come AFTER this one?
                         const userRepliedAfter = messages.slice(i + 1).some(m => m.role === 'user');
                         if (userRepliedAfter) return 'read';        // 2 blue ticks
                         if (i === messages.length - 1) return 'sent'; // 1 grey tick (newest)
                         return 'delivered';                           // 2 grey ticks
                       };
-                      const msgStatus = isAI ? getMsgStatus() : null;
+                      const msgStatus = isOutgoing ? getMsgStatus() : null;
                       return (
                         <div
                           key={msg.id || i}
-                          className={`flex ${isAI ? 'justify-end' : 'justify-start'}`}
+                          className={`flex ${isOutgoing ? 'justify-end' : 'justify-start'}`}
                         >
                           <div
                             className={`max-w-[92%] sm:max-w-[78%] rounded-xl px-3.5 py-2.5 shadow-md relative ${
                               isAI
                                 ? 'bg-[#005c4b] text-[#e9edef] rounded-tr-none'
+                                : isInternalNote
+                                ? 'bg-amber-900/60 border border-amber-500/50 text-amber-200 rounded-tr-none'
                                 : 'bg-[#202c33] text-[#e9edef] rounded-tl-none border border-[#2a3942]'
                             } ${msg._sending ? 'opacity-70' : ''}`}
                           >
                             <div className="flex items-center justify-between gap-4 mb-1">
-                              <span className="text-[10px] font-bold opacity-75 uppercase text-emerald-300">
-                                {isAI ? '11FIT Assistant / Manual' : formatPhone(msg.phone)}
+                              <span className={`text-[10px] font-bold opacity-75 uppercase ${isInternalNote ? 'text-amber-400' : 'text-emerald-300'}`}>
+                                {isInternalNote ? '🔒 Private Note (Invisible to Customer)' : isAI ? '🤖 11FIT Assistant / Manual' : `👤 ${formatPhone(msg.phone)}`}
                               </span>
                             </div>
                             <div className="my-0.5">
@@ -1867,6 +2159,22 @@ export default function WhatsAppAIDashboard() {
                         <FileText className="w-3.5 h-3.5" />
                         Template
                       </button>
+                      
+                      {/* PRIVATE NOTE TOGGLE */}
+                      <div className="h-6 w-[1px] bg-slate-700 mx-1"></div>
+                      <button
+                        type="button"
+                        onClick={() => setIsPrivateNote(prev => !prev)}
+                        className={`px-3 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all shadow-md ${
+                          isPrivateNote
+                            ? 'bg-amber-600/30 text-amber-400 border border-amber-500/50'
+                            : 'bg-slate-800 text-slate-400 hover:text-white border border-transparent'
+                        }`}
+                        title="Toggle Private Note Mode"
+                      >
+                        <Lock className="w-3.5 h-3.5" />
+                        Private Note
+                      </button>
                     </div>
                   </div>
 
@@ -1937,7 +2245,7 @@ export default function WhatsAppAIDashboard() {
                                 </span>
                               </div>
                             ))}
-                            {selectedTemplate === 'abandoned_cart_v2' && customerCarts.length > 1 && (
+                            {selectedTemplate === 'abandoned_cart_v4' && customerCarts.length > 1 && (
                               <p className="text-[10px] text-amber-400 mt-1">⚠️ {customerCarts.length} carts found — using most recent</p>
                             )}
                           </div>
@@ -1945,37 +2253,125 @@ export default function WhatsAppAIDashboard() {
                       })()}
                     </div>
                   ) : (
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="text"
-                        placeholder={
-                          !status24h.isOpen
-                            ? '🔒 Locked — customer must message first to reopen'
-                            : mediaPreviewType === 'image'
-                            ? 'Photo caption (optional)...'
-                            : mediaPreviewType === 'audio'
-                            ? 'Ready to send audio message...'
-                            : 'Type manual WhatsApp reply...'
-                        }
-                        value={replyText}
-                        onChange={(e) => setReplyText(e.target.value)}
-                        disabled={!status24h.isOpen && !mediaPreviewBase64}
-                        className={`flex-1 bg-[#0b141a] border rounded-xl px-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none transition-colors ${
-                          !status24h.isOpen && !mediaPreviewBase64
-                            ? 'border-rose-700/50 opacity-50 cursor-not-allowed'
-                            : 'border-slate-700 focus:border-emerald-500'
-                        }`}
-                      />
-                      <button
-                        type="submit"
-                        disabled={sendingReply || (!status24h.isOpen && !mediaPreviewBase64 && replyType === 'text')}
-                        className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-bold flex items-center gap-2 shadow-lg shadow-emerald-600/20 shrink-0"
-                      >
+                    <div className="flex flex-col gap-2">
+                      {/* ZERO-COST SMART SUGGESTIONS / ON-DEMAND AI SUGGESTER */}
+                      {!isPrivateNote && replyType === 'text' && status24h.isOpen && (
+                        <div className="flex items-center gap-2 overflow-x-auto pb-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+                          <div className="flex items-center gap-1 px-2 py-1 bg-fuchsia-500/10 text-fuchsia-400 rounded-lg text-[10px] font-black uppercase tracking-wider shrink-0 border border-fuchsia-500/20">
+                            <Bot className="w-3 h-3" /> Co-Pilot
+                          </div>
+                          
+                          {aiSuggestions.length > 0 ? (
+                            <>
+                              {aiSuggestions.map((sug, idx) => (
+                                <button
+                                  key={idx}
+                                  type="button"
+                                  onClick={() => setReplyText(sug)}
+                                  className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-full text-[11px] font-medium whitespace-nowrap transition-colors flex items-center gap-1.5 shrink-0"
+                                >
+                                  <Sparkles className="w-3.5 h-3.5 text-indigo-400" /> {sug.length > 30 ? sug.substring(0, 30) + '...' : sug}
+                                </button>
+                              ))}
+                              <button
+                                type="button"
+                                onClick={() => setAiSuggestions([])}
+                                className="px-2 py-1 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded-full text-[10px] font-bold transition-colors shrink-0"
+                              >
+                                Clear
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={handleGenerateSuggestions}
+                              disabled={isGeneratingSuggestions}
+                              className="px-3 py-1 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-400 border border-indigo-500/30 rounded-full text-[11px] font-bold whitespace-nowrap transition-colors flex items-center gap-1.5 shrink-0 disabled:opacity-50"
+                            >
+                              {isGeneratingSuggestions ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Bot className="w-3.5 h-3.5" />}
+                              {isGeneratingSuggestions ? 'Reading chat...' : '💡 Suggest Replies'}
+                            </button>
+                          )}
+                        </div>
+                      )}
+                      
+                      <div className="flex items-center gap-2 relative w-full">
+                        <input
+                          type="text"
+                          placeholder={
+                            !status24h.isOpen && !isPrivateNote
+                              ? '🔒 Locked — customer must message first to reopen'
+                              : isPrivateNote
+                              ? '🔒 Type a private internal note (invisible to customer)...'
+                              : mediaPreviewType === 'image'
+                              ? 'Photo caption (optional)...'
+                              : mediaPreviewType === 'audio'
+                              ? 'Ready to send audio message...'
+                              : 'Type manual WhatsApp reply...'
+                          }
+                          value={replyText}
+                          onChange={(e) => {
+                            setReplyText(e.target.value);
+                          }}
+                          disabled={!status24h.isOpen && !mediaPreviewBase64 && !isPrivateNote}
+                          className={`flex-1 bg-[#0b141a] border rounded-xl pl-4 pr-2 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none transition-colors ${
+                            !status24h.isOpen && !mediaPreviewBase64 && !isPrivateNote
+                              ? 'border-rose-700/50 opacity-50 cursor-not-allowed'
+                              : isPrivateNote
+                              ? 'border-amber-500/50 focus:border-amber-400 bg-amber-950/20'
+                              : 'border-slate-700 focus:border-emerald-500'
+                          }`}
+                        />
+                        
+                        {!isPrivateNote && replyType === 'text' && (
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <button
+                              type="button"
+                              onClick={handleRewrite}
+                              disabled={!replyText || isRewriting}
+                              className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white border border-indigo-500 rounded-lg px-2.5 py-2 text-xs font-bold transition-colors shadow-lg shadow-indigo-600/20 flex items-center gap-1.5 h-full"
+                              title="Rewrite professionally with AI"
+                            >
+                              {isRewriting ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                              <span className="hidden xl:inline">Rewrite</span>
+                            </button>
+                            <select
+                              onChange={(e) => {
+                                if (e.target.value) {
+                                  if (e.target.value === 'ADD_NEW') {
+                                    setShowQuickRepliesModal(true);
+                                    e.target.value = '';
+                                  } else {
+                                    setReplyText(e.target.value);
+                                    e.target.value = ''; // Reset selector
+                                  }
+                                }
+                              }}
+                              className="bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-slate-700 rounded-lg px-2.5 py-2 text-xs font-bold appearance-none cursor-pointer focus:outline-none focus:border-emerald-500 transition-colors w-[100px] sm:w-[120px] h-full"
+                              title="Insert Quick Reply"
+                            >
+                              <option value="">⚡ Quick</option>
+                              {cannedResponses.map((r, i) => (
+                                <option key={i} value={r.text}>{r.label}</option>
+                              ))}
+                              <option value="ADD_NEW">+ Add New...</option>
+                            </select>
+                          </div>
+                        )}
+                        
+                        <button
+                          type="submit"
+                          disabled={sendingReply || (!status24h.isOpen && !mediaPreviewBase64 && replyType === 'text' && !isPrivateNote)}
+                          className={`px-4 py-2 rounded-xl text-white text-xs font-bold flex items-center justify-center gap-2 shadow-lg shrink-0 disabled:opacity-50 transition-colors h-full ${
+                            isPrivateNote ? 'bg-amber-600 hover:bg-amber-500 shadow-amber-600/20' : 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-600/20'
+                          }`}
+                        >
                         {sendingReply
                           ? <RefreshCw className="w-4 h-4 animate-spin" />
                           : <Send className="w-4 h-4" />}
                       </button>
                     </div>
+                  </div>
                   )}
                 </form>
               </>
@@ -1986,6 +2382,46 @@ export default function WhatsAppAIDashboard() {
                 <p className="text-xs text-slate-600 max-w-sm mt-1">
                   Select a customer conversation from the list to view chat history, call directly, or take over manually.
                 </p>
+              </div>
+            )}
+          </div>
+
+          {/* RIGHT PANE: PERSISTENT CUSTOMER PROFILE (Col 3) */}
+          <div className={`lg:col-span-3 bg-slate-900/90 lg:rounded-2xl border-l lg:border border-slate-800 flex flex-col overflow-hidden shadow-xl h-full hidden lg:flex`}>
+            {selectedChat ? (
+              <div className="flex flex-col h-full bg-[#080e1a]">
+                <div className="p-4 border-b border-slate-800/80 bg-[#111c30]">
+                  <h3 className="font-extrabold text-white text-base">Customer Profile</h3>
+                  <p className="text-xs font-mono text-emerald-400 mt-1">{formatPhone(selectedChat.phone)}</p>
+                </div>
+                <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                  {/* Quick Tags Section */}
+                  <div className="bg-slate-800/40 border border-slate-700/50 rounded-xl p-3">
+                    <h4 className="text-xs font-bold text-slate-300 mb-2 flex items-center gap-1.5"><Tags className="w-3.5 h-3.5" /> AI Tags</h4>
+                    <div className="flex flex-wrap gap-1.5">
+                      {(selectedChat.tags || []).length > 0 ? selectedChat.tags.map(t => (
+                        <span key={t} className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-700 text-slate-300">{t}</span>
+                      )) : <span className="text-xs text-slate-500 italic">No tags assigned</span>}
+                    </div>
+                  </div>
+                  
+                  {/* Notes / Context */}
+                  <div className="bg-slate-800/40 border border-slate-700/50 rounded-xl p-3">
+                    <h4 className="text-xs font-bold text-slate-300 mb-2 flex items-center gap-1.5"><Info className="w-3.5 h-3.5" /> Contact Name</h4>
+                    <p className="text-sm font-semibold text-white">{selectedChat.customer_name || 'Unknown'}</p>
+                  </div>
+                  
+                  <button 
+                    onClick={() => handleOpenCustomerOrders(selectedChat.phone)}
+                    className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2.5 rounded-xl text-sm transition-colors flex items-center justify-center gap-2"
+                  >
+                    <ShoppingBag className="w-4 h-4" /> View Shopify Orders
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex-1 flex items-center justify-center p-6 text-center">
+                <p className="text-xs text-slate-600">Select a chat to view profile</p>
               </div>
             )}
           </div>
@@ -2229,6 +2665,16 @@ export default function WhatsAppAIDashboard() {
             >
               ⭐ Custom Rules
             </button>
+            <button
+              onClick={() => setInstCategoryTab('knowledge_base')}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap ${
+                instCategoryTab === 'knowledge_base'
+                  ? 'bg-emerald-600/20 text-emerald-400 border border-emerald-500/40'
+                  : 'bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800'
+              }`}
+            >
+              📚 Knowledge Base
+            </button>
           </div>
 
           <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 space-y-4">
@@ -2312,6 +2758,22 @@ export default function WhatsAppAIDashboard() {
               </div>
             )}
 
+            {instCategoryTab === 'knowledge_base' && (
+              <div>
+                <label className="block text-sm font-bold text-white mb-1.5 flex items-center justify-between">
+                  <span>📚 RAG Knowledge Base (FAQs, Policies, Scripts)</span>
+                  <span className="text-xs text-slate-400 font-normal">Inject text data directly into AI memory</span>
+                </label>
+                <textarea
+                  value={instKnowledgeBase}
+                  onChange={(e) => setInstKnowledgeBase(e.target.value)}
+                  rows={10}
+                  placeholder="Paste FAQ content, scripts, or policy docs here. The AI will read this to answer queries..."
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-sm text-slate-200 font-mono focus:outline-none focus:border-emerald-500 transition-colors leading-relaxed"
+                />
+              </div>
+            )}
+
             <div className="flex items-center justify-between pt-3 border-t border-slate-800/80">
               <span className="text-xs text-slate-400">
                 💡 Tip: Changes saved here are dynamically injected into the real-time AI prompt on every WhatsApp incoming message.
@@ -2371,7 +2833,7 @@ export default function WhatsAppAIDashboard() {
           )}
 
           {/* Top Analytics KPI Cards */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5 shrink-0">
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-5 shrink-0">
             <div className="bg-[#0F172A] border border-slate-800 rounded-2xl p-4 flex flex-col justify-between shadow-sm">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Abandoned Carts</span>
@@ -2441,6 +2903,23 @@ export default function WhatsAppAIDashboard() {
                 </div>
                 <div className="text-[11px] text-blue-400/80 font-medium mt-0.5">
                   11FIT Network DB
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-[#0F172A] border border-slate-800 rounded-2xl p-4 flex flex-col justify-between shadow-sm">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">AI Pitch Count</span>
+                <div className="w-8 h-8 rounded-lg bg-fuchsia-500/10 border border-fuchsia-500/20 flex items-center justify-center text-fuchsia-400">
+                  <Sparkles className="w-4 h-4" />
+                </div>
+              </div>
+              <div className="mt-3">
+                <div className="text-2xl font-extrabold text-white">
+                  {elevenFitData?.analytics?.aiCarouselsSent || 0}
+                </div>
+                <div className="text-[11px] text-fuchsia-400 font-medium mt-0.5">
+                  Product Carousels Sent
                 </div>
               </div>
             </div>
@@ -3270,6 +3749,377 @@ export default function WhatsAppAIDashboard() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* --- AUDIENCE SEGMENTS & BROADCASTER TAB --- */}
+      {activeSubTab === 'contacts' && (() => {
+        const filteredContacts = contacts.filter(c => {
+          const matchesSearch = c.phone.includes(contactsSearch) || (c.tags || []).join(' ').toLowerCase().includes(contactsSearch.toLowerCase());
+          const matchesTag = tagFilter ? (c.tags || []).includes(tagFilter) : true;
+          return matchesSearch && matchesTag;
+        });
+        const allUniqueTags = Array.from(new Set(contacts.flatMap(c => c.tags || [])));
+        
+        return (
+        <div className="flex-1 min-h-0 bg-[#0B0F19] flex flex-col p-4 sm:p-6 overflow-y-auto">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
+            <div>
+              <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                <Users className="w-6 h-6 text-indigo-400" />
+                Audience Segments & Smart Tags
+              </h2>
+              <p className="text-slate-400 text-sm mt-1">Filter your contacts and blast targeted WhatsApp broadcasts instantly.</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button 
+                onClick={selectedContacts.length > 0 ? openBroadcastModal : undefined} 
+                disabled={selectedContacts.length === 0}
+                className={`font-bold px-4 py-2 rounded-lg flex items-center gap-2 shadow-lg transition-all ${
+                  selectedContacts.length > 0 
+                    ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-900/50 animate-fade-in cursor-pointer' 
+                    : 'bg-slate-800 text-slate-500 cursor-not-allowed opacity-50'
+                }`}
+                title={selectedContacts.length === 0 ? "Select contacts to broadcast" : "Create Broadcast"}
+              >
+                <Send className="w-4 h-4" />
+                {selectedContacts.length > 0 ? `Create Broadcast (${selectedContacts.length})` : 'Create Broadcast'}
+              </button>
+              <div className="relative">
+                <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-500" />
+                <input type="text" placeholder="Search phone or tags..." 
+                  value={contactsSearch} onChange={e => setContactsSearch(e.target.value)}
+                  className="bg-slate-900 border border-slate-700 rounded-lg pl-9 pr-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 w-48 sm:w-64" />
+              </div>
+              <select value={tagFilter} onChange={e => setTagFilter(e.target.value)}
+                className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 appearance-none">
+                <option value="">All Tags</option>
+                {allUniqueTags.map(t => (
+                  <option key={t} value={t}>{t}</option>
+                ))}
+              </select>
+              <button onClick={fetchContacts} className="p-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg transition-colors">
+                <RefreshCw className={`w-4 h-4 ${loadingContacts ? 'animate-spin' : ''}`} />
+              </button>
+            </div>
+          </div>
+          
+          <div className="flex-1 bg-slate-900 border border-slate-800 rounded-2xl overflow-auto shadow-xl">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-slate-950 border-b border-slate-800 text-xs uppercase tracking-wider text-slate-400 sticky top-0 z-10">
+                  <th className="p-4 w-12 text-center">
+                    <input type="checkbox" className="rounded bg-slate-800 border-slate-600 checked:bg-indigo-500 cursor-pointer w-4 h-4"
+                      checked={selectedContacts.length > 0 && selectedContacts.length === filteredContacts.length}
+                      onChange={() => handleSelectAllContacts(filteredContacts)}
+                      title="Select All Filtered"
+                    />
+                  </th>
+                  <th className="p-4 font-bold">Customer Phone</th>
+                  <th className="p-4 font-bold">Smart Tags</th>
+                  <th className="p-4 font-bold hidden sm:table-cell">Last Active</th>
+                  <th className="p-4 font-bold text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/60">
+                {filteredContacts.map((contact, i) => (
+                  <tr key={i} className={`hover:bg-slate-800/30 transition-colors ${selectedContacts.includes(contact.phone) ? 'bg-indigo-500/5' : ''}`}>
+                    <td className="p-4 text-center">
+                      <input type="checkbox" className="rounded bg-slate-800 border-slate-600 checked:bg-indigo-500 cursor-pointer w-4 h-4"
+                        checked={selectedContacts.includes(contact.phone)}
+                        onChange={() => handleSelectContact(contact.phone)}
+                      />
+                    </td>
+                    <td className="p-4">
+                      <div className="font-bold text-slate-200">{contact.phone}</div>
+                      <div className="text-xs text-slate-500">{contact.customer_name || 'Unknown Name'}</div>
+                    </td>
+                    <td className="p-4">
+                      <div className="flex flex-wrap gap-1">
+                        {(contact.tags || []).length > 0 ? contact.tags.map((t, idx) => (
+                          <span key={idx} className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                            {t}
+                          </span>
+                        )) : <span className="text-xs text-slate-600 italic">No tags</span>}
+                      </div>
+                    </td>
+                    <td className="p-4 hidden sm:table-cell text-sm text-slate-400">
+                      {new Date(contact.updated_at).toLocaleString()}
+                    </td>
+                    <td className="p-4 text-right">
+                      <button onClick={() => { setActiveSubTab('inbox'); setInboxSearch(contact.phone); }} 
+                        className="text-xs bg-slate-800 hover:bg-slate-700 text-white px-3 py-1.5 rounded-lg border border-slate-700 transition-colors">
+                        Message
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                {filteredContacts.length === 0 && !loadingContacts && (
+                  <tr>
+                    <td colSpan={5} className="p-8 text-center text-slate-500 italic">
+                      No contacts found matching criteria.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Broadcast Modal */}
+          {isBroadcastModalOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+              <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-lg shadow-2xl flex flex-col">
+                <div className="flex justify-between items-center p-5 border-b border-slate-800">
+                  <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                    <Send className="w-5 h-5 text-emerald-400" /> Create Broadcast
+                  </h3>
+                  <button onClick={() => setIsBroadcastModalOpen(false)} className="text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
+                </div>
+                <div className="p-6 flex-1 overflow-y-auto">
+                  <div className="mb-4 bg-indigo-500/10 border border-indigo-500/30 rounded-lg p-3 text-indigo-200 text-sm">
+                    You are about to send a WhatsApp broadcast to <strong>{selectedContacts.length} customers</strong>.
+                  </div>
+                  <div className="mb-4">
+                    <label className="block text-sm font-medium text-slate-300 mb-1">Select Meta Template</label>
+                    <select value={broadcastTemplate} onChange={e => setBroadcastTemplate(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:border-indigo-500">
+                      <option value="">-- Choose an approved template --</option>
+                      {metaTemplates.map(t => (
+                        <option key={t.name} value={t.name}>{t.name} ({t.language})</option>
+                      ))}
+                    </select>
+                    {metaTemplates.length === 0 && <div className="text-xs text-amber-500 mt-1">Loading templates... if this persists, configure them in the Meta Templates tab.</div>}
+                  </div>
+                  {broadcastMessage && (
+                    <div className={`p-3 rounded-lg text-sm mb-4 ${broadcastMessage.includes('Failed') ? 'bg-red-500/10 text-red-400 border border-red-500/20' : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'}`}>
+                      {broadcastMessage}
+                    </div>
+                  )}
+                </div>
+                <div className="p-5 border-t border-slate-800 bg-slate-950 rounded-b-2xl flex justify-end gap-3">
+                  <button onClick={() => setIsBroadcastModalOpen(false)} className="px-4 py-2 rounded-lg text-sm font-bold text-slate-300 hover:bg-slate-800 transition-colors">Cancel</button>
+                  <button onClick={sendBroadcast} disabled={!broadcastTemplate || sendingBroadcast}
+                    className="px-5 py-2 rounded-lg text-sm font-bold bg-emerald-600 hover:bg-emerald-500 text-white transition-all disabled:opacity-50 flex items-center gap-2">
+                    {sendingBroadcast ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                    {sendingBroadcast ? 'Sending...' : 'Send Broadcast'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+        );
+      })()}
+
+      {/* --- BROADCASTS & CAMPAIGNS TAB --- */}
+      {activeSubTab === 'broadcasts' && (
+        <div className="flex-1 min-h-0 bg-slate-950 p-4 sm:p-6 lg:p-8 overflow-y-auto">
+          <div className="max-w-6xl mx-auto space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <h1 className="text-2xl font-black text-white flex items-center gap-2">
+                  <Megaphone className="text-fuchsia-500 w-7 h-7" />
+                  Campaigns & Broadcasts
+                </h1>
+                <p className="text-slate-400 text-sm mt-1">Track the performance and ROI of your WhatsApp broadcasts.</p>
+              </div>
+              <button
+                onClick={() => setActiveSubTab('contacts')}
+                className="bg-fuchsia-600 hover:bg-fuchsia-500 text-white px-5 py-2.5 rounded-xl font-bold flex items-center justify-center gap-2 transition-colors shadow-lg shadow-fuchsia-600/20"
+              >
+                <Plus className="w-4 h-4" /> New Campaign
+              </button>
+            </div>
+
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+              {loadingBroadcasts ? (
+                <div className="p-12 text-center text-slate-500 flex flex-col items-center">
+                  <RefreshCw className="w-8 h-8 animate-spin text-fuchsia-500 mb-4" />
+                  <p className="font-bold">Loading Campaign Data...</p>
+                </div>
+              ) : broadcastsHistory.length === 0 ? (
+                <div className="p-16 text-center">
+                  <div className="w-20 h-20 bg-slate-800 rounded-full flex items-center justify-center mx-auto mb-6">
+                    <Megaphone className="w-10 h-10 text-slate-600" />
+                  </div>
+                  <h3 className="text-xl font-bold text-white mb-2">No Campaigns Yet</h3>
+                  <p className="text-slate-400 max-w-md mx-auto mb-6">You haven't sent any broadcasts yet. Go to Audience & CRM to select customers and blast your first campaign.</p>
+                  <button onClick={() => setActiveSubTab('contacts')} className="bg-fuchsia-600/20 text-fuchsia-400 px-6 py-2 rounded-lg font-bold border border-fuchsia-500/30 hover:bg-fuchsia-600/30 transition-colors">Start a Campaign</button>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-slate-950/50 border-b border-slate-800 text-xs text-slate-400 uppercase tracking-wider">
+                        <th className="p-4 font-bold">Campaign Name</th>
+                        <th className="p-4 font-bold">Date</th>
+                        <th className="p-4 font-bold">Audience</th>
+                        <th className="p-4 font-bold text-center">Status</th>
+                        <th className="p-4 font-bold text-right">Recipients</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800 text-sm">
+                      {broadcastsHistory.map(b => (
+                        <tr key={b.id} className="hover:bg-slate-800/50 transition-colors group cursor-pointer" onClick={() => fetchBroadcastLogs(b.id)}>
+                          <td className="p-4">
+                            <div className="font-bold text-slate-200 group-hover:text-white transition-colors">{b.name}</div>
+                            <div className="text-xs text-slate-500 mt-1">Template: <span className="text-slate-400">{b.template_name}</span></div>
+                          </td>
+                          <td className="p-4 text-slate-400">{new Date(b.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
+                          <td className="p-4">
+                            <span className="bg-slate-800 text-slate-300 text-xs px-2 py-1 rounded-md">{b.segment.replace(/_/g, ' ')}</span>
+                          </td>
+                          <td className="p-4 text-center">
+                            <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[10px] font-black uppercase px-2 py-0.5 rounded-full">{b.status}</span>
+                          </td>
+                          <td className="p-4 text-right font-bold text-white">{b.total_recipients}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+            
+            {/* Expanded Broadcast Logs Modal/Panel */}
+            {selectedBroadcastLogs && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-[fadeIn_0.2s_ease]">
+                <div className="bg-slate-900 border border-slate-700 w-full max-w-4xl rounded-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden">
+                   <div className="p-5 border-b border-slate-800 flex justify-between items-center bg-slate-950/50">
+                     <h2 className="text-lg font-black text-white flex items-center gap-2"><BarChart3 className="w-5 h-5 text-fuchsia-400" /> Campaign Analytics</h2>
+                     <button onClick={() => setSelectedBroadcastLogs(null)} className="text-slate-400 hover:text-white p-1 bg-slate-800 rounded-lg"><X className="w-5 h-5" /></button>
+                   </div>
+                   <div className="p-6 overflow-y-auto">
+                      <div className="grid grid-cols-4 gap-4 mb-8">
+                         <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-4 text-center">
+                            <div className="text-3xl font-black text-white mb-1">{selectedBroadcastLogs.length}</div>
+                            <div className="text-xs text-slate-400 font-bold uppercase">Total Sent</div>
+                         </div>
+                         <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-4 text-center">
+                            <div className="text-3xl font-black text-emerald-400 mb-1">{selectedBroadcastLogs.filter(l => l.status !== 'failed').length}</div>
+                            <div className="text-xs text-emerald-500/70 font-bold uppercase">Delivered (Est.)</div>
+                         </div>
+                         <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-4 text-center">
+                            <div className="text-3xl font-black text-blue-400 mb-1">--</div>
+                            <div className="text-xs text-blue-500/70 font-bold uppercase">Read (Pending)</div>
+                         </div>
+                         <div className="bg-fuchsia-500/10 border border-fuchsia-500/20 rounded-xl p-4 text-center">
+                            <div className="text-3xl font-black text-fuchsia-400 mb-1">--</div>
+                            <div className="text-xs text-fuchsia-500/70 font-bold uppercase">Replied (Pending)</div>
+                         </div>
+                      </div>
+                      
+                      <h3 className="text-sm font-bold text-slate-300 mb-4 border-b border-slate-800 pb-2">Delivery Logs</h3>
+                      <div className="max-h-64 overflow-y-auto">
+                        <table className="w-full text-left text-sm">
+                           <thead>
+                             <tr className="text-xs text-slate-500 uppercase tracking-wider sticky top-0 bg-slate-900 border-b border-slate-800">
+                               <th className="py-2">Phone</th>
+                               <th className="py-2">Status</th>
+                               <th className="py-2 text-right">Time</th>
+                             </tr>
+                           </thead>
+                           <tbody className="divide-y divide-slate-800/50">
+                             {selectedBroadcastLogs.map((log, i) => (
+                               <tr key={i} className="text-slate-300">
+                                 <td className="py-2 font-mono text-xs">{log.phone}</td>
+                                 <td className="py-2">
+                                   <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full ${log.status === 'failed' ? 'bg-red-500/20 text-red-400' : 'bg-emerald-500/20 text-emerald-400'}`}>
+                                     {log.status}
+                                   </span>
+                                   {log.error_message && <span className="text-xs text-red-400 ml-2">{log.error_message}</span>}
+                                 </td>
+                                 <td className="py-2 text-right text-xs text-slate-500">{new Date(log.created_at).toLocaleTimeString()}</td>
+                               </tr>
+                             ))}
+                           </tbody>
+                        </table>
+                      </div>
+                   </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* --- FLOW BUILDER TAB --- */}
+      {activeSubTab === 'flow_builder' && (
+        <div className="flex-1 min-h-0 bg-slate-950 flex flex-col">
+          <ChatbotFlowBuilder />
+        </div>
+      )}
+
+      {/* QUICK REPLIES MODAL */}
+      {showQuickRepliesModal && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[80vh] shadow-2xl">
+            <div className="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-950/50">
+              <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                <Zap className="w-5 h-5 text-emerald-400" /> Manage Quick Replies
+              </h2>
+              <button onClick={() => setShowQuickRepliesModal(false)} className="text-slate-400 hover:text-white transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-4 overflow-y-auto flex-1 space-y-3">
+              {cannedResponses.length === 0 && (
+                <div className="text-center text-slate-500 py-8 text-sm">No quick replies found. Add one below!</div>
+              )}
+              {cannedResponses.map((r) => (
+                <div key={r.id || r.label} className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-3 flex justify-between items-start gap-4 hover:border-slate-600 transition-colors">
+                  <div>
+                    <h3 className="text-emerald-400 font-bold text-sm mb-1">{r.label}</h3>
+                    <p className="text-slate-300 text-xs leading-relaxed whitespace-pre-wrap">{r.text}</p>
+                  </div>
+                  <button
+                    onClick={async () => {
+                      if (!window.confirm('Delete this quick reply?')) return;
+                      await fetch(`/api/whatsapp-settings?action=quick_replies&id=${r.id}`, { method: 'DELETE' });
+                      fetchQuickReplies();
+                    }}
+                    className="text-red-400 hover:text-red-300 p-1.5 bg-red-400/10 rounded-lg transition-colors shrink-0"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              ))}
+            </div>
+            <div className="p-4 border-t border-slate-800 bg-slate-950/50">
+              <form onSubmit={async (e) => {
+                e.preventDefault();
+                const label = e.target.label.value;
+                const text = e.target.text.value;
+                if (!label || !text) return;
+                const btn = e.nativeEvent.submitter;
+                const prev = btn.innerHTML;
+                btn.innerHTML = 'Saving...';
+                await fetch('/api/whatsapp-settings?action=quick_replies', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ label, text })
+                });
+                btn.innerHTML = prev;
+                e.target.reset();
+                fetchQuickReplies();
+              }} className="space-y-3">
+                <input type="text" name="label" placeholder="Short Label (e.g. Refund Policy)" required className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-emerald-500 transition-colors" />
+                <textarea name="text" placeholder="Full message text..." required rows="2" className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-emerald-500 resize-none transition-colors"></textarea>
+                <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg px-4 py-2.5 font-bold text-sm transition-colors shadow-lg shadow-emerald-600/20">
+                  + Add New Quick Reply
+                </button>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* CALLING OVERLAYS */}
+      <IncomingCallOverlay />
+      {outboundCall && (
+        <OutboundCallOverlay
+          phone={outboundCall.phone}
+          customerName={outboundCall.customerName}
+          onComplete={() => setOutboundCall(null)}
+        />
       )}
     </div>
   );

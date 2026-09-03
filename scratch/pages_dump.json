@@ -1,0 +1,69 @@
+{
+  "pages": [
+    {
+      "id": 757719203921,
+      "title": "About Us",
+      "shop_id": 104305262673,
+      "handle": "about-us",
+      "body_html": "<style>\n  .policy-container {\n    max-width: 800px;\n    margin: 0 auto;\n    font-family: inherit;\n    line-height: 1.8;\n    color: #333;\n  }\n  .policy-header {\n    text-align: center;\n    margin-bottom: 40px;\n  }\n  .policy-header h1 {\n    font-size: 2.5rem;\n    font-weight: 700;\n    margin-bottom: 10px;\n    color: #111;\n  }\n  .policy-header p {\n    font-size: 1.1rem;\n    color: #555;\n    max-width: 600px;\n    margin: 0 auto;\n  }\n  .policy-section {\n    background: #fff;\n    border: 1px solid #eaeaea;\n    border-radius: 8px;\n    padding: 30px 35px;\n    margin-bottom: 25px;\n    box-shadow: 0 4px 6px rgba(0,0,0,0.02);\n  }\n  .policy-section h2 {\n    font-size: 1.5rem;\n    font-weight: 600;\n    margin-bottom: 15px;\n    color: #111;\n  }\n  .policy-section p {\n    margin-bottom: 15px;\n    font-size: 1.05rem;\n  }\n  .highlight-box {\n    background: #f9f9f9;\n    border-left: 4px solid #111;\n    padding: 20px;\n    margin: 25px 0;\n    font-weight: 500;\n    font-size: 1.1rem;\n    color: #222;\n    font-style: italic;\n  }\n  .core-values {\n    display: grid;\n    grid-template-columns: 1fr;\n    gap: 15px;\n    margin-top: 20px;\n  }\n  @media (min-width: 600px) {\n    .core-values {\n      grid-template-columns: 1fr 1fr;\n    }\n  }\n  .value-card {\n    background: #fdfdfd;\n    border: 1px solid #e0e0e0;\n    padding: 20px;\n    border-radius: 6px;\n  }\n  .value-card h3 {\n    font-size: 1.2rem;\n    font-weight: 600;\n    margin-top: 0;\n    margin-bottom: 10px;\n    color: #111;\n  }\n</style>\n<div class=\"policy-container\">\n<div class=\"policy-header\">\n<h1>The 11fit Story</h1>\n<p>From the factory floor to your everyday hustle. We are redefining premium activewear.</p>\n</div>\n<div class=\"policy-section\">\n<h2>Our Roots: The Manufacturing Powerhouse</h2>\n<p>Every great brand has a foundation built on hard work and expertise. <strong>11fit</strong> was born from the manufacturing powerhouse of Elevenfit Clothing Private Limited headquartered in the industrial heart of Rohtak, Haryana.</p>\n<p>For years, our state-of-the-art factory has been the silent engine behind some of the highest quality activewear in the country. We have mastered the art of performance fabrics, precision tailoring, and dynamic designs, proudly supplying over 50,000 customers across India.</p>\n</div>\n<div class=\"highlight-box\">\"We realized that the everyday athlete deserves direct access to factory-grade perfection—without the massive retail markups. That realization was the birth of 11fit.\"</div>\n<div class=\"policy-section\">\n<h2>The 11fit Revolution: Factory to Consumer</h2>\n<p>We created 11fit.in to bridge the gap between world-class manufacturing and the modern consumer. By cutting out the middlemen, distributors, and expensive retail storefronts, we bring premium, performance-driven activewear directly from our cutting tables to your doorstep.</p>\n<p>When you wear 11fit, you aren't just wearing a brand; you are wearing decades of textile engineering, relentless quality testing, and a deep understanding of what the human body needs to move freely.</p>\n</div>\n<div class=\"policy-section\">\n<h2>The Anatomy of Our Quality</h2>\n<p>We don't compromise on craftsmanship. Every t-shirt, track pant, and pair of shorts we design is subjected to our strict <strong>3-stage Quality Check (QC)</strong> before it leaves our facility.</p>\n<div class=\"core-values\">\n<div class=\"value-card\">\n<h3>🧵 Performance Fabrics</h3>\n<p>We utilize elite materials like 14% to 30% stretch 4-way Crush Lycra and premium NS Terry. Our fabrics are designed to breathe, stretch, and recover, keeping you cool during your toughest workouts.</p>\n</div>\n<div class=\"value-card\">\n<h3>🪡 Precision Stitching</h3>\n<p>Activewear needs to be tough. We use industrial-grade double-lock stitching and reinforced hardware, including heavy-duty zipper pockets and inner drawcords that stand the test of time.</p>\n</div>\n<div class=\"value-card\">\n<h3>🎯 The Perfect Fit</h3>\n<p>We specialize in the modern \"fit-and-flare\" athletic silhouette. Our cuts are ergonomically designed to flatter your form while providing zero restriction on your mobility.</p>\n</div>\n<div class=\"value-card\">\n<h3>💸 Honest Pricing</h3>\n<p>Because we own the factory, we own the pricing. You get top-tier, uncompromising retail quality at a fraction of the cost of traditional global sportswear brands.</p>\n</div>\n</div>\n</div>\n<div class=\"policy-section\">\n<h2>Our Promise to You</h2>\n<p>Whether you are hitting the gym, going for a run, or just living an active lifestyle, 11fit is engineered to move with you. We stand proudly behind every stitch, zipper, and seam we produce.</p>\n<p><strong>Welcome to 11fit. Elevate your movement. Find your perfect fit.</strong></p>\n</div>\n</div>",
+      "author": null,
+      "created_at": "2026-05-25T10:55:51+05:30",
+      "updated_at": "2026-08-08T12:35:38+05:30",
+      "published_at": "2026-05-25T10:56:28+05:30",
+      "template_suffix": "page",
+      "admin_graphql_api_id": "gid://shopify/Page/757719203921"
+    },
+    {
+      "id": 757526233169,
+      "title": "Contact",
+      "shop_id": 104305262673,
+      "handle": "contact",
+      "body_html": null,
+      "author": null,
+      "created_at": "2026-05-21T12:55:24+05:30",
+      "updated_at": "2026-05-21T12:55:24+05:30",
+      "published_at": "2026-05-21T12:55:24+05:30",
+      "template_suffix": "contact",
+      "admin_graphql_api_id": "gid://shopify/Page/757526233169"
+    },
+    {
+      "id": 757719334993,
+      "title": "FAQ",
+      "shop_id": 104305262673,
+      "handle": "faq",
+      "body_html": "<style>\n  .policy-container {\n    max-width: 800px;\n    margin: 0 auto;\n    font-family: inherit;\n    line-height: 1.6;\n    color: #333;\n  }\n  .policy-header {\n    text-align: center;\n    margin-bottom: 40px;\n  }\n  .policy-header h1 {\n    font-size: 2.5rem;\n    font-weight: 700;\n    margin-bottom: 10px;\n    color: #111;\n  }\n  .policy-header p {\n    font-size: 1.1rem;\n    color: #555;\n  }\n  .policy-section {\n    background: #fff;\n    border: 1px solid #eaeaea;\n    border-radius: 8px;\n    padding: 25px 30px;\n    margin-bottom: 25px;\n    box-shadow: 0 4px 6px rgba(0,0,0,0.02);\n  }\n  .policy-section h2 {\n    font-size: 1.5rem;\n    font-weight: 600;\n    margin-bottom: 20px;\n    color: #111;\n    border-bottom: 2px solid #f0f0f0;\n    padding-bottom: 10px;\n  }\n  .faq-item {\n    margin-bottom: 20px;\n  }\n  .faq-question {\n    font-size: 1.15rem;\n    font-weight: 600;\n    color: #111;\n    margin-bottom: 8px;\n  }\n  .faq-answer {\n    font-size: 1rem;\n    color: #444;\n    margin-top: 0;\n  }\n  .highlight-box {\n    background: #f9f9f9;\n    border-left: 4px solid #111;\n    padding: 15px;\n    margin: 25px 0 0 0;\n    font-weight: 500;\n    text-align: center;\n  }\n  .highlight-box a {\n    color: #111;\n    font-weight: 700;\n    text-decoration: none;\n  }\n  .highlight-box a:hover {\n    text-decoration: underline;\n  }\n</style>\n\n<div class=\"policy-container\">\n  <div class=\"policy-header\">\n    <h1>Frequently Asked Questions</h1>\n    <p>Got questions? We have got answers. Here is everything you need to know about shopping with 11fit.</p>\n  </div>\n\n  <div class=\"policy-section\">\n    <h2>🚚 Shipping &amp; Delivery</h2>\n    \n    <div class=\"faq-item\">\n      <div class=\"faq-question\">How long will it take to receive my order?</div>\n      <p class=\"faq-answer\">We dispatch all orders directly from our Rohtak factory within 24-48 hours. Depending on your location, delivery typically takes 3 to 5 business days for Metro cities, and 5 to 7 business days for the rest of India.</p>\n    </div>\n\n    <div class=\"faq-item\">\n      <div class=\"faq-question\">How can I track my package?</div>\n      <p class=\"faq-answer\">As soon as your order leaves our facility, you will receive a tracking link via Email and WhatsApp/SMS. You can use this link to track your activewear right to your doorstep.</p>\n    </div>\n\n    <div class=\"faq-item\">\n      <div class=\"faq-question\">Do you offer free shipping?</div>\n      <p class=\"faq-answer\">Shipping charges are calculated transparently at checkout based on your pincode and order weight. We often run free shipping promotions, which will be clearly displayed on the top banner of our website!</p>\n    </div>\n  </div>\n\n  <div class=\"policy-section\">\n    <h2>🔄 Returns &amp; Exchanges</h2>\n    \n    <div class=\"faq-item\">\n      <div class=\"faq-question\">What if the size doesn't fit me perfectly?</div>\n      <p class=\"faq-answer\">No worries! We offer a hassle-free 7-day exchange policy. Just ensure the item is unworn, unwashed, and the tags are still attached. Contact our support team, and we will arrange a size exchange for you.</p>\n    </div>\n\n    <div class=\"faq-item\">\n      <div class=\"faq-question\">What is your refund policy?</div>\n      <p class=\"faq-answer\">We accept returns within 7 days of delivery for any manufacturing defects or sizing issues. Once we receive and inspect the returned item, a refund will be credited to your original payment method (or bank account for COD orders) within 5-7 business days.</p>\n    </div>\n\n    <div class=\"faq-item\">\n      <div class=\"faq-question\">How do I initiate a return?</div>\n      <p class=\"faq-answer\">Simply email us at <strong>support@11fit.in</strong> or WhatsApp us at <strong>+91 98965 07407</strong> with your Order ID and a few photos of the product. Our team will arrange a quick doorstep pickup.</p>\n    </div>\n  </div>\n\n  <div class=\"policy-section\">\n    <h2>💳 Payment Methods</h2>\n\n    <div class=\"faq-item\">\n      <div class=\"faq-question\">Do you accept Cash on Delivery (COD)?</div>\n      <p class=\"faq-answer\">Yes, we do! Cash on Delivery is available across most Indian pincodes. You can pay our delivery executive in cash or via a UPI scanner when they hand you the package.</p>\n    </div>\n\n    <div class=\"faq-item\">\n      <div class=\"faq-question\">Is it safe to pay online on 11fit.in?</div>\n      <p class=\"faq-answer\">Absolutely. Our checkout is 100% secure. We use RBI-approved, bank-grade encrypted payment gateways to process UPI, Credit/Debit cards, and Net Banking. We never store your payment data.</p>\n    </div>\n  </div>\n\n  <div class=\"policy-section\">\n    <h2>👕 Our Products</h2>\n\n    <div class=\"faq-item\">\n      <div class=\"faq-question\">Where is 11fit activewear manufactured?</div>\n      <p class=\"faq-answer\">All 11fit products are proudly manufactured in-house at our parent company's (Espon Clothing Pvt. Ltd.) state-of-the-art factory in Rohtak, Haryana. Buying from us means you get factory-direct quality without the retail markup.</p>\n    </div>\n\n    <div class=\"faq-item\">\n      <div class=\"faq-question\">How do I know my correct size?</div>\n      <p class=\"faq-answer\">Every product page has a detailed \"Size Chart\" link right next to the size selection buttons. We recommend comparing these measurements with a well-fitting piece of activewear you already own.</p>\n    </div>\n  </div>\n\n  <div class=\"highlight-box\">\n    Still have questions? We are here to help! <br>\n    Drop us an email at <a href=\"mailto:support@11fit.in\">support@11fit.in</a> or chat with us on <a href=\"tel:+919896507407\">WhatsApp (+91 98965 07407)</a>.\n  </div>\n</div>",
+      "author": null,
+      "created_at": "2026-05-25T10:59:11+05:30",
+      "updated_at": "2026-05-25T10:59:11+05:30",
+      "published_at": "2026-05-25T10:58:54+05:30",
+      "template_suffix": "page",
+      "admin_graphql_api_id": "gid://shopify/Page/757719334993"
+    },
+    {
+      "id": 757929246801,
+      "title": "kp account",
+      "shop_id": 104305262673,
+      "handle": "kp-account",
+      "body_html": "<script src=\"https://pdp.gokwik.co/kp-account/init.js\" type=\"module\"></script>",
+      "author": null,
+      "created_at": "2026-05-29T17:21:51+05:30",
+      "updated_at": "2026-05-29T17:21:51+05:30",
+      "published_at": "2026-05-29T17:21:51+05:30",
+      "template_suffix": null,
+      "admin_graphql_api_id": "gid://shopify/Page/757929246801"
+    },
+    {
+      "id": 757720285265,
+      "title": "Order Tracking",
+      "shop_id": 104305262673,
+      "handle": "order-tracking",
+      "body_html": "This is the Order Tracking page",
+      "author": null,
+      "created_at": "2026-05-25T11:25:49+05:30",
+      "updated_at": "2026-05-25T11:25:49+05:30",
+      "published_at": "2026-05-25T11:25:49+05:30",
+      "template_suffix": null,
+      "admin_graphql_api_id": "gid://shopify/Page/757720285265"
+    }
+  ]
+}

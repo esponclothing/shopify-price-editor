@@ -1,0 +1,500 @@
+[
+  {
+    "name": "11fit_shorts",
+    "language": "en_US",
+    "category": "MARKETING",
+    "allow_category_change": true,
+    "components": [
+      {
+        "type": "HEADER",
+        "format": "IMAGE",
+        "example": {
+          "header_handle": [
+            "https://scontent.whatsapp.net/v/t61.29466-34/710595051_1012958044889855_1630994164977455078_n.png?ccb=1-7&_nc_sid=8b1bef&_nc_ohc=ubO5bCL8lwUQ7kNvwEU2GQ-&_nc_oc=AdrKpl_sDh8n8UnBEgBMV4cqjabT30mNlfpg3n63lk8ThJTopRo3n1Ktk7ztepDqJrcPzbXQwsL19QAG49Ymf4WL&_nc_zt=3&_nc_ht=scontent.whatsapp.net&edm=AH51TzQEAAAA&_nc_gid=G1u11O8-7hWIjUn98gwvTg&_nc_tpa=Q5bMBQIVPDRWijdeaE7QtP4zN8zraHpdAhGsSYrk5Ox59gT4Hvz4eQ0pddIc8C2z_ncbNBnpqnHS0J0B&oh=01_Q5Aa5QGT85hVSSWjLCg0E_njo4365MLRFH0-YdOpO1L0YIWxzA&oe=6AA241C8"
+          ]
+        }
+      },
+      {
+        "type": "BODY",
+        "text": "Hey {{1}}! 👋\n\nReady to upgrade your gym wardrobe with our premium 11 Fit Air-Flex Shorts (3 for ₹899)?\n\nSkip the Cash on Delivery and unlock our EXCLUSIVE PREPAID BENEFITS today:\n\n💳 Pay Online & Get:\n\n✨ 5% INSTANT OFF on your current order.\n\n💸 10% STORE CREDIT (Cashback) added instantly to your wallet!\n\n🔓 100% usable on your next order with no hidden conditions.\n\nPremium 4-Way Lycra stretch, ultra-breathable fit, and unmatched comfort are just a click away. Stock is selling out fast! 🏃‍♂️💨\n\nTap below to grab your 3-pack combo now! 👇",
+        "example": {
+          "body_text": [
+            [
+              "Name"
+            ]
+          ]
+        }
+      },
+      {
+        "type": "FOOTER",
+        "text": "11fit.in | Premium Activewear"
+      },
+      {
+        "type": "BUTTONS",
+        "buttons": [
+          {
+            "type": "URL",
+            "text": "Buy Now",
+            "url": "https://11fit.in/products/11-fit-air-flex-4-way-lycra-active-shorts"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "cashback_credited_v1",
+    "language": "en_US",
+    "category": "MARKETING",
+    "allow_category_change": true,
+    "components": [
+      {
+        "type": "BODY",
+        "text": "Great news! {{1}} credits are added in your account for cashback of order {{2}}. You can use them in your next order. Valid for 14 days only!",
+        "example": {
+          "body_text": [
+            [
+              "85",
+              "#1222"
+            ]
+          ]
+        }
+      },
+      {
+        "type": "BUTTONS",
+        "buttons": [
+          {
+            "type": "URL",
+            "text": "Visit Website",
+            "url": "https://11fit.in/collections/all"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "call_permission_request",
+    "language": "en",
+    "category": "MARKETING",
+    "allow_category_change": true,
+    "components": [
+      {
+        "type": "BODY",
+        "text": "Hey {{1}}! This is 11FIT support. To assist you better, we'd like to connect with you over a quick call. Please approve our call request by selecting your preference below.",
+        "example": {
+          "body_text": [
+            [
+              "NAME"
+            ]
+          ]
+        }
+      },
+      {
+        "type": "FOOTER",
+        "text": "Team 11Fit"
+      },
+      {
+        "type": "CALL_PERMISSION_REQUEST"
+      }
+    ]
+  },
+  {
+    "name": "exchange_shipped",
+    "language": "en_US",
+    "category": "UTILITY",
+    "allow_category_change": true,
+    "components": [
+      {
+        "type": "HEADER",
+        "format": "TEXT",
+        "text": "Exchange Shipped"
+      },
+      {
+        "type": "BODY",
+        "text": "Your exchange parcel for Order {{1}} has been shipped via {{2}}!\n\nYou can track your new package here:\n{{3}}\n\nThank you!",
+        "example": {
+          "body_text": [
+            [
+              "#1054",
+              "Delhivery",
+              "https://track.com/123"
+            ]
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "return_pickup_scheduled",
+    "language": "en_US",
+    "category": "UTILITY",
+    "allow_category_change": true,
+    "components": [
+      {
+        "type": "HEADER",
+        "format": "TEXT",
+        "text": "Pickup Scheduled"
+      },
+      {
+        "type": "BODY",
+        "text": "A pickup has been scheduled for your Order {{1}} via {{2}}.\n\nPlease keep the items packed and ready. You can track your return shipment using this link:\n{{3}}\n\nThank you!",
+        "example": {
+          "body_text": [
+            [
+              "#1054",
+              "Delhivery",
+              "https://track.com/123"
+            ]
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "return_completed",
+    "language": "en_US",
+    "category": "UTILITY",
+    "allow_category_change": true,
+    "components": [
+      {
+        "type": "HEADER",
+        "format": "TEXT",
+        "text": "Request Completed"
+      },
+      {
+        "type": "BODY",
+        "text": "Your return/exchange for Order {{1}} has been successfully completed.\n\nIf a refund was requested, it has been issued. Thank you for shopping with 11FIT!",
+        "example": {
+          "body_text": [
+            [
+              "#1054"
+            ]
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "return_request_approved",
+    "language": "en_US",
+    "category": "UTILITY",
+    "allow_category_change": true,
+    "components": [
+      {
+        "type": "HEADER",
+        "format": "TEXT",
+        "text": "Request Approved"
+      },
+      {
+        "type": "BODY",
+        "text": "Great news! Your return/exchange request for Order {{1}} has been approved.\n\nWe will schedule a pickup shortly and notify you with the details.",
+        "example": {
+          "body_text": [
+            [
+              "#1054"
+            ]
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "return_request_received",
+    "language": "en_US",
+    "category": "UTILITY",
+    "allow_category_change": true,
+    "components": [
+      {
+        "type": "HEADER",
+        "format": "TEXT",
+        "text": "Request Received"
+      },
+      {
+        "type": "BODY",
+        "text": "Hi! We have received your return/exchange request for Order {{1}}.\n\nOur team will review your request and get back to you shortly. Thank you for your patience!",
+        "example": {
+          "body_text": [
+            [
+              "#1054"
+            ]
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "name": "abandoned_cart_v4",
+    "language": "en_US",
+    "category": "MARKETING",
+    "allow_category_change": true,
+    "components": [
+      {
+        "type": "HEADER",
+        "format": "TEXT",
+        "text": "YOUR 11FIT ITEMS ARE WAITING"
+      },
+      {
+        "type": "BODY",
+        "text": "Hey {{1}}, you left something awesome in your cart! 🔥\n\nWe noticed your activewear items are still waiting for you. High-demand oversized tees and drop-shoulder apparel sell out fast—secure yours before stock runs out!\n\n💰 Cart Value: ₹{{2}}\n⚡ EXTRA SAVINGS: Get an instant 5% EXTRA OFF when you choose Prepaid payment at checkout!",
+        "example": {
+          "body_text": [
+            [
+              "Aman",
+              "1,499"
+            ]
+          ]
+        }
+      },
+      {
+        "type": "FOOTER",
+        "text": "11FIT Activewear • Premium Fit & Fabric"
+      },
+      {
+        "type": "BUTTONS",
+        "buttons": [
+          {
+            "type": "URL",
+            "text": "Complete Your Order",
+            "url": "https://11fit.in/products/{{1}}",
+            "example": [
+              "https://11fit.in/products/running-shorts"
+            ]
+          },
+          {
+            "type": "URL",
+            "text": "Size Guide",
+            "url": "https://11fit.in/pages/size-chart"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "out_for_delivery_v2",
+    "language": "en_US",
+    "category": "MARKETING",
+    "allow_category_change": true,
+    "components": [
+      {
+        "type": "HEADER",
+        "format": "TEXT",
+        "text": "OUT FOR DELIVERY TODAY"
+      },
+      {
+        "type": "BODY",
+        "text": "Hi {{1}}, your 11FIT order {{2}} is OUT FOR DELIVERY today! 📦\n\n{{3}}\n\nPlease keep your phone reachable so the delivery executive can contact you when they arrive at your address.\n\n💵 Payment Info: {{4}}\n\nThank you for choosing 11FIT!",
+        "example": {
+          "body_text": [
+            [
+              "Rahul",
+              "#1129",
+              "Track here: https://11fit.in/track",
+              "₹1499 (COD - Please keep cash/UPI ready)"
+            ]
+          ]
+        }
+      },
+      {
+        "type": "FOOTER",
+        "text": "11FIT Activewear • Quick Delivery"
+      }
+    ]
+  },
+  {
+    "name": "order_confirmed_v2",
+    "language": "en_US",
+    "category": "MARKETING",
+    "allow_category_change": true,
+    "components": [
+      {
+        "type": "HEADER",
+        "format": "TEXT",
+        "text": "ORDER CONFIRMED"
+      },
+      {
+        "type": "BODY",
+        "text": "Hi {{1}}, thank you for shopping with 11FIT! 🙌\n\nYour order {{2}} has been confirmed and is being processed.\n\n📦 Items Ordered:\n{{3}}\n\n💵 Payment Info: {{4}}\n📍 Delivery Address: {{5}}\n\nYou will receive tracking details as soon as it ships!",
+        "example": {
+          "body_text": [
+            [
+              "Rahul",
+              "#1129",
+              "1x Drop Shoulder Tee - Black (XL)",
+              "₹1499 (COD)",
+              "Sector 45, Gurgaon"
+            ]
+          ]
+        }
+      },
+      {
+        "type": "FOOTER",
+        "text": "11FIT Activewear • Premium Fit & Fabric"
+      },
+      {
+        "type": "BUTTONS",
+        "buttons": [
+          {
+            "type": "QUICK_REPLY",
+            "text": "Track my order"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "combo_offer_reengage_v2",
+    "language": "en_US",
+    "category": "MARKETING",
+    "allow_category_change": true,
+    "components": [
+      {
+        "type": "HEADER",
+        "format": "TEXT",
+        "text": "SPECIAL 11FIT OFFER"
+      },
+      {
+        "type": "BODY",
+        "text": "Hi {{1}}, we miss you! 🖤\n\nUpgrade your activewear wardrobe today with our exclusive Combo Deals. Buy more, save more!\n\nShop now before the stock runs out! 🏃‍♂️",
+        "example": {
+          "body_text": [
+            [
+              "Rahul"
+            ]
+          ]
+        }
+      },
+      {
+        "type": "FOOTER",
+        "text": "11FIT Activewear • Premium Quality"
+      },
+      {
+        "type": "BUTTONS",
+        "buttons": [
+          {
+            "type": "URL",
+            "text": "Shop All Combos",
+            "url": "https://11fit.in/collections/all"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "order_status_check_v1",
+    "language": "en_US",
+    "category": "UTILITY",
+    "allow_category_change": true,
+    "components": [
+      {
+        "type": "HEADER",
+        "format": "TEXT",
+        "text": "ORDER STATUS UPDATE"
+      },
+      {
+        "type": "BODY",
+        "text": "Hi {{1}}, here is the current status of your 11FIT order {{2}}:\n\n*Status:* {{3}}\n\n{{4}}\n\nIf you need any further assistance, please reply to this message. Thank you for choosing 11FIT! 🙌",
+        "example": {
+          "body_text": [
+            [
+              "Rahul",
+              "#1129",
+              "Shipped",
+              "Track here: https://11fit.in/track"
+            ]
+          ]
+        }
+      },
+      {
+        "type": "FOOTER",
+        "text": "11FIT Support • support@11fit.com"
+      }
+    ]
+  },
+  {
+    "name": "order_delivered_confirm_v1",
+    "language": "en_US",
+    "category": "UTILITY",
+    "allow_category_change": true,
+    "components": [
+      {
+        "type": "HEADER",
+        "format": "TEXT",
+        "text": "ORDER DELIVERED"
+      },
+      {
+        "type": "BODY",
+        "text": "Hi {{1}}, your 11FIT order {{2}} has been delivered successfully.\n\nWe hope you are happy with your purchase! If you have any questions, issues, or need help with sizing or the product, just reply to this message and our support team will assist you right away.\n\nThank you for shopping with 11FIT. We appreciate your trust! 🙌",
+        "example": {
+          "body_text": [
+            [
+              "Rahul",
+              "#1129"
+            ]
+          ]
+        }
+      },
+      {
+        "type": "FOOTER",
+        "text": "11FIT Activewear • support@11fit.com"
+      }
+    ]
+  },
+  {
+    "name": "eleven_fit_otp",
+    "language": "en",
+    "category": "AUTHENTICATION",
+    "allow_category_change": true,
+    "components": [
+      {
+        "type": "BODY",
+        "text": "*{{1}}* is your verification code. For your security, do not share this code.",
+        "add_security_recommendation": true,
+        "example": {
+          "body_text": [
+            [
+              "123456"
+            ]
+          ]
+        }
+      },
+      {
+        "type": "FOOTER",
+        "text": "Expires in 5 minutes.",
+        "code_expiration_minutes": 5
+      },
+      {
+        "type": "BUTTONS",
+        "buttons": [
+          {
+            "type": "URL",
+            "text": "Copy code",
+            "url": "https://www.whatsapp.com/otp/code/?otp_type=COPY_CODE&code_expiration_minutes=5&code=otp{{1}}",
+            "example": [
+              "https://www.whatsapp.com/otp/code/?otp_type=COPY_CODE&code_expiration_minutes=5&code=otp123456"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "hello_world",
+    "language": "en_US",
+    "category": "UTILITY",
+    "allow_category_change": true,
+    "components": [
+      {
+        "type": "HEADER",
+        "format": "TEXT",
+        "text": "Hello World"
+      },
+      {
+        "type": "BODY",
+        "text": "Welcome and congratulations!! This message demonstrates your ability to send a WhatsApp message notification from the Cloud API, hosted by Meta. Thank you for taking the time to test with us."
+      },
+      {
+        "type": "FOOTER",
+        "text": "WhatsApp Business Platform sample message"
+      }
+    ]
+  }
+]

@@ -1,6 +1,6 @@
 const axios = require('axios');
 
-const GROQ_API_KEY = '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';
+const GROQ_API_KEY = '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';
 
 const MODELS_TO_TEST = [
   'llama-3.3-70b-versatile',

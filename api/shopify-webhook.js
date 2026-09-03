@@ -12,10 +12,7 @@ export default async function handler(req, res) {
   const supabaseUrl = process.env.SUPABASE_URL;
   const supabaseKey = process.env.SUPABASE_ANON_KEY;
 
-  if (!supabaseUrl || !supabaseKey) {
-    console.error('Supabase credentials not configured');
-    return res.status(500).json({ error: 'Database not configured' });
-  }
+  
 
   // 1. Extract phones for indexing
   const phones = [

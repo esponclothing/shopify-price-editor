@@ -6,18 +6,23 @@ import AutomatedCampaignsDashboard from './components/AutomatedCampaignsDashboar
 import HomepageManagerDashboard from './components/HomepageManagerDashboard';
 import WhatsAppAIDashboard from './components/WhatsAppAIDashboard';
 import CustomerOrderLookup from './components/CustomerOrderLookup';
+import CallsTab from './components/CallsTab';
+import ReturnExchangeDashboard from './components/ReturnExchangeDashboard';
+import ChatbotFlowBuilder from './components/ChatbotFlowBuilder';
+import AnalyticsDashboard from './components/AnalyticsDashboard';
 import {
   Settings, Save, AlertCircle, Package, Search, X, Edit, Tags,
   Image as ImageIcon, Database, Info, ShoppingCart, Phone, Mail,
   Send, CheckSquare, Square, Sparkles, Upload, Wand2, Plus,
   Layers, Trash2, LayoutDashboard, ChevronRight, Eye, ChevronDown, ChevronUp,
-  Truck, Clock, ArrowLeftRight, PackageCheck, Percent, RefreshCw, Zap, Menu
+  Truck, Clock, ArrowLeftRight, PackageCheck, Percent, RefreshCw, Zap, Menu,
+  Workflow, Activity
 } from 'lucide-react';
 
 // Axios request interceptor to dynamically inject target credentials
 axios.interceptors.request.use((config) => {
-  const storeUrl = localStorage.getItem('shopifyStoreUrl') || import.meta.env.VITE_SHOPIFY_STORE_URL || '';
-  const accessToken = localStorage.getItem('shopifyAccessToken') || import.meta.env.VITE_SHOPIFY_ACCESS_TOKEN || '';
+  const storeUrl = import.meta.env.VITE_SHOPIFY_STORE_URL || localStorage.getItem('shopifyStoreUrl') || '';
+  const accessToken = import.meta.env.VITE_SHOPIFY_ACCESS_TOKEN || localStorage.getItem('shopifyAccessToken') || '';
   if (storeUrl) {
     config.headers['x-client-store-url'] = storeUrl.trim();
   }
@@ -28,8 +33,8 @@ axios.interceptors.request.use((config) => {
 });
 
 export default function App() {
-  const [storeUrl, setStoreUrl] = useState(() => localStorage.getItem('shopifyStoreUrl') || import.meta.env.VITE_SHOPIFY_STORE_URL || '');
-  const [accessToken, setAccessToken] = useState(() => localStorage.getItem('shopifyAccessToken') || import.meta.env.VITE_SHOPIFY_ACCESS_TOKEN || '');
+  const [storeUrl, setStoreUrl] = useState(() => import.meta.env.VITE_SHOPIFY_STORE_URL || localStorage.getItem('shopifyStoreUrl') || '');
+  const [accessToken, setAccessToken] = useState(() => import.meta.env.VITE_SHOPIFY_ACCESS_TOKEN || localStorage.getItem('shopifyAccessToken') || '');
   const [storeName, setStoreName] = useState(() => localStorage.getItem('shopifyStoreName') || '');
   const [storeLogoUrl, setStoreLogoUrl] = useState(() => localStorage.getItem('shopifyStoreLogoUrl') || '');
 
@@ -38,6 +43,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('whatsapp-ai');
   const [showSettings, setShowSettings] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [whatsappPreSelectPhone, setWhatsappPreSelectPhone] = useState(null);
 
   const [products, setProducts] = useState([]);
   const [locations, setLocations] = useState([]);
@@ -348,6 +354,46 @@ export default function App() {
         </div>
 
         <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
+          {/* ── WHATSAPP SECTION ── */}
+          <div className="pb-1">
+            <p className="px-4 text-[10px] font-extrabold uppercase tracking-widest text-emerald-500/70">WhatsApp</p>
+          </div>
+          <button
+            onClick={() => setActiveTab('whatsapp-ai')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all duration-200 ${activeTab === 'whatsapp-ai' ? 'bg-gradient-to-r from-emerald-500/10 to-teal-500/5 text-emerald-400 border border-emerald-500/20' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200 border border-transparent'}`}
+          >
+            <Zap className="w-4 h-4 text-emerald-400" /> AI Inbox &amp; Logs
+          </button>
+          <button
+            onClick={() => setActiveTab('calls')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all duration-200 ${activeTab === 'calls' ? 'bg-gradient-to-r from-emerald-500/10 to-teal-500/5 text-emerald-400 border border-emerald-500/20' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200 border border-transparent'}`}
+          >
+            <Phone className="w-4 h-4 text-emerald-400" />
+            <span>Calls</span>
+            <span className="ml-auto px-1.5 py-0.5 rounded-md text-[9px] font-extrabold bg-emerald-500 text-slate-950 uppercase">NEW</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('analytics')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all duration-200 ${activeTab === 'analytics' ? 'bg-gradient-to-r from-emerald-500/10 to-teal-500/5 text-emerald-400 border border-emerald-500/20' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200 border border-transparent'}`}
+          >
+            <Activity className="w-4 h-4 text-emerald-400" /> Store Analytics
+          </button>
+          <button
+            onClick={() => setActiveTab('customer-lookup')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all duration-200 ${activeTab === 'customer-lookup' ? 'bg-gradient-to-r from-emerald-500/10 to-teal-500/5 text-emerald-400 border border-emerald-500/20' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200 border border-transparent'}`}
+          >
+            <Phone className="w-4 h-4 text-emerald-400" /> Phone Order Lookup
+          </button>
+          <button
+            onClick={() => setActiveTab('returns')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all duration-200 ${activeTab === 'returns' ? 'bg-gradient-to-r from-emerald-500/10 to-teal-500/5 text-emerald-400 border border-emerald-500/20' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200 border border-transparent'}`}
+          >
+            <ArrowLeftRight className="w-4 h-4 text-emerald-400" /> Returns &amp; Exchanges
+          </button>
+          {/* ── SHOPIFY TOOLS SECTION ── */}
+          <div className="pt-3 pb-1">
+            <p className="px-4 text-[10px] font-extrabold uppercase tracking-widest text-slate-500">Shopify Tools</p>
+          </div>
           <button
             onClick={() => setActiveTab('products')}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all duration-200 ${activeTab === 'products' ? 'bg-gradient-to-r from-yellow-500/10 to-amber-500/5 text-yellow-500 border border-yellow-500/20' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200 border border-transparent'}`}
@@ -407,18 +453,6 @@ export default function App() {
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all duration-200 ${activeTab === 'homepage-manager' ? 'bg-gradient-to-r from-yellow-500/10 to-amber-500/5 text-yellow-500 border border-yellow-500/20' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200 border border-transparent'}`}
           >
             <LayoutDashboard className="w-4 h-4" /> Homepage Manager
-          </button>
-          <button
-            onClick={() => setActiveTab('whatsapp-ai')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all duration-200 ${activeTab === 'whatsapp-ai' ? 'bg-gradient-to-r from-emerald-500/10 to-teal-500/5 text-emerald-400 border border-emerald-500/20' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200 border border-transparent'}`}
-          >
-            <Zap className="w-4 h-4 text-emerald-400" /> WhatsApp AI Logs
-          </button>
-          <button
-            onClick={() => setActiveTab('customer-lookup')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all duration-200 ${activeTab === 'customer-lookup' ? 'bg-gradient-to-r from-emerald-500/10 to-teal-500/5 text-emerald-400 border border-emerald-500/20' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200 border border-transparent'}`}
-          >
-            <Phone className="w-4 h-4 text-emerald-400" /> Phone Order Lookup
           </button>
         </nav>
 
@@ -595,8 +629,10 @@ export default function App() {
               </div>
             ) : (
               <h2 className="text-base md:text-lg font-bold text-white tracking-wide truncate">
-                {activeTab === 'whatsapp-ai' && '⚡ WhatsApp AI Logs'}
+                {activeTab === 'whatsapp-ai' && '⚡ AI Inbox & Logs'}
+                {activeTab === 'calls' && '📞 Calls'}
                 {activeTab === 'customer-lookup' && '📞 Phone Order Lookup'}
+                {activeTab === 'returns' && '↩️ Returns & Exchanges'}
                 {activeTab === 'subcategories' && '📁 Subcategories'}
                 {activeTab === 'delivery' && '🚚 Delivery Pipeline'}
                 {activeTab === 'bulk' && '📊 Bulk Price Editor'}
@@ -606,6 +642,7 @@ export default function App() {
                 {activeTab === 'collections-manager' && '🗂️ Collections Manager'}
                 {activeTab === 'combo-creator' && '📦 Combo Creator'}
                 {activeTab === 'homepage-manager' && '🏠 Homepage Manager'}
+                {activeTab === 'flow-builder' && '⚙️ Flow Builder'}
               </h2>
             )}
           </div>
@@ -756,11 +793,19 @@ export default function App() {
           ) : activeTab === 'homepage-manager' ? (
             <HomepageManagerDashboard products={products} collections={collections} mainThemeId={mainThemeId} />
           ) : activeTab === 'whatsapp-ai' ? (
-            <WhatsAppAIDashboard />
+            <WhatsAppAIDashboard preSelectPhone={whatsappPreSelectPhone} />
+          ) : activeTab === 'analytics' ? (
+            <AnalyticsDashboard />
+          ) : activeTab === 'calls' ? (
+            <CallsTab />
           ) : activeTab === 'customer-lookup' ? (
-            <CustomerOrderLookup onOpenWhatsApp={(phone) => setActiveTab('whatsapp-ai')} />
+            <CustomerOrderLookup />
+          ) : activeTab === 'returns' ? (
+            <ReturnExchangeDashboard />
           ) : activeTab === 'combo-creator' ? (
             <ComboCreatorDashboard products={products} />
+          ) : activeTab === 'flow-builder' ? (
+            <ChatbotFlowBuilder />
           ) : (
             <DeliveryPipelineDashboard />
           )}
