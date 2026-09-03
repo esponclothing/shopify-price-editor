@@ -266,10 +266,12 @@ export default async function handler(req, res) {
       );
       const row = data?.[0] || {};
       return res.status(200).json({
+        gemini_api_key: row.gemini_api_key || '',
         groq_api_key: row.groq_api_key || '',
         groq_model: row.groq_model || 'llama-3.3-70b-versatile',
         whatsapp_token: row.whatsapp_token ? '••••••' + row.whatsapp_token.slice(-8) : '',
         waba_id: row.waba_id || '2025586748064434',
+        has_gemini_key: !!row.gemini_api_key,
         has_groq_key: !!row.groq_api_key,
         has_whatsapp_token: !!row.whatsapp_token,
         has_waba_id: !!(row.waba_id || '2025586748064434'),

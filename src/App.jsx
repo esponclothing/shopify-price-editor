@@ -1144,15 +1144,13 @@ function DeliveryPipelineDashboard() {
 }
 
 function WhatsAppAISettingsPanel() {
-  const [waGroqKey, setWaGroqKey] = useState('');
-  const [waGroqModel, setWaGroqModel] = useState('llama-3.3-70b-versatile');
+
   const [waToken, setWaToken] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState('');
-  const [hasKey, setHasKey] = useState(false);
+  const [hasGeminiKey, setHasGeminiKey] = useState(false);
   const [hasWaToken, setHasWaToken] = useState(false);
-  const [showGroqKey, setShowGroqKey] = useState(false);
   const [showWaToken, setShowWaToken] = useState(false);
 
   useEffect(() => {
@@ -1163,8 +1161,7 @@ function WhatsAppAISettingsPanel() {
     try {
       const res = await fetch('/api/whatsapp-settings');
       const data = await res.json();
-      setWaGroqModel(data.groq_model || 'llama-3.3-70b-versatile');
-      setHasKey(data.has_groq_key || false);
+      setHasGeminiKey(data.has_gemini_key || false);
       setHasWaToken(data.has_whatsapp_token || false);
     } catch (err) {
       console.error('Failed to load WhatsApp AI settings:', err);
@@ -1176,8 +1173,7 @@ function WhatsAppAISettingsPanel() {
     setSaving(true);
     setStatus('');
     try {
-      const payload = { groq_model: waGroqModel };
-      if (waGroqKey.trim()) payload.groq_api_key = waGroqKey.trim();
+      const payload = {};
       if (waToken.trim()) payload.whatsapp_token = waToken.trim();
 
       const res = await fetch('/api/whatsapp-settings', {
@@ -1187,8 +1183,7 @@ function WhatsAppAISettingsPanel() {
       });
       const data = await res.json();
       if (data.success) {
-        setStatus('✅ Saved! WhatsApp AI bot will use the new key from the next message.');
-        setWaGroqKey('');
+        setStatus('✅ Saved! WhatsApp AI bot configuration updated.');
         setWaToken('');
         loadSettings();
       } else {
@@ -1213,46 +1208,19 @@ function WhatsAppAISettingsPanel() {
 
       {/* Current Status */}
       <div className="bg-slate-800/60 border border-slate-700 rounded-xl p-3 space-y-1">
-        <div className="flex items-center gap-2 text-xs">
-          <span className={`w-2 h-2 rounded-full ${hasKey ? 'bg-green-500' : 'bg-red-500'}`} />
-          <span className="text-slate-300">Groq API Key: {hasKey ? <span className="text-green-400 font-bold">Active ✅</span> : <span className="text-red-400 font-bold">Not Set ❌</span>}</span>
+        <div className="flex items-center gap-2 text-xs mb-2 pb-2 border-b border-slate-700">
+          <span className="text-slate-300">
+            <strong className="text-white">Note:</strong> The WhatsApp AI Bot now natively shares the <strong className="text-yellow-400">Google Gemini API Key</strong> and models you configure in the <strong>AI Engine Setup</strong> tab.
+          </span>
+        </div>
+        <div className="flex items-center gap-2 text-xs mt-2">
+          <span className={`w-2 h-2 rounded-full ${hasGeminiKey ? 'bg-green-500' : 'bg-red-500'}`} />
+          <span className="text-slate-300">Gemini AI Link: {hasGeminiKey ? <span className="text-green-400 font-bold">Linked ✅</span> : <span className="text-red-400 font-bold">Not Linked ❌</span>}</span>
         </div>
         <div className="flex items-center gap-2 text-xs">
           <span className={`w-2 h-2 rounded-full ${hasWaToken ? 'bg-green-500' : 'bg-yellow-500'}`} />
           <span className="text-slate-300">WhatsApp Token: {hasWaToken ? <span className="text-green-400 font-bold">Active ✅</span> : <span className="text-yellow-400 font-bold">Using Vercel Env</span>}</span>
         </div>
-        <div className="flex items-center gap-2 text-xs mt-1">
-          <span className="w-2 h-2 rounded-full bg-blue-500" />
-          <span className="text-slate-300">Fallback Models: <span className="text-blue-400 font-bold">llama-3.3-70b → llama-3.1-8b → compound-beta</span></span>
-        </div>
-      </div>
-
-      {/* Groq API Key */}
-      <div>
-        <label className="block text-xs font-medium text-slate-400 mb-1">Groq API Key (get free key from console.groq.com)</label>
-        <div className="flex gap-2">
-          <input
-            type={showGroqKey ? 'text' : 'password'}
-            value={waGroqKey}
-            onChange={e => setWaGroqKey(e.target.value)}
-            className="flex-1 px-3 py-2 border border-slate-700 bg-slate-800 text-white rounded-xl text-sm focus:ring-2 focus:ring-green-500/50 outline-none"
-            placeholder={hasKey ? '••••••••  (leave blank to keep current)' : 'gsk_...'}
-          />
-          <button onClick={() => setShowGroqKey(!showGroqKey)} className="px-3 py-2 bg-slate-700 text-slate-300 rounded-xl text-xs hover:bg-slate-600 transition-colors">
-            {showGroqKey ? '🙈' : '👁️'}
-          </button>
-        </div>
-      </div>
-
-      {/* Groq Model */}
-      <div>
-        <label className="block text-xs font-medium text-slate-400 mb-1">Primary AI Model</label>
-        <select value={waGroqModel} onChange={e => setWaGroqModel(e.target.value)} className="w-full px-3 py-2 border border-slate-700 bg-slate-800 text-white rounded-xl text-sm focus:ring-2 focus:ring-green-500/50 outline-none">
-          <option value="llama-3.3-70b-versatile">Llama 3.3 70B Versatile (Best Quality — 300ms)</option>
-          <option value="llama-3.1-8b-instant">Llama 3.1 8B Instant (Ultra Fast — 120ms)</option>
-          <option value="compound-beta">Compound Beta (Groq Compound AI — 900ms)</option>
-        </select>
-        <p className="text-[10px] text-slate-500 mt-1">If this model fails, the bot automatically tries the other 2 models in order.</p>
       </div>
 
       {/* WhatsApp Token */}

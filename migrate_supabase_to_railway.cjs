@@ -12,8 +12,14 @@ async function run() {
   await rwClient.connect();
 
   console.log('Fetching tables from Supabase...');
-  const tablesRes = await sbClient.query("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'");
-  const tables = tablesRes.rows.map(r => r.table_name);
+  // Only migrate the missing ones!
+  const tables = [
+    'whatsapp_chat_memory',
+    'whatsapp_chat_settings',
+    'push_subscriptions',
+    'whatsapp_settings',
+    'whatsapp_broadcasts'
+  ];
   console.log(`Found ${tables.length} tables:`, tables.join(', '));
 
   for (const table of tables) {
