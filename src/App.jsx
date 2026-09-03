@@ -1306,15 +1306,24 @@ function SettingsModal({ storeUrl, setStoreUrl, accessToken, setAccessToken, sto
     const saved = localStorage.getItem('recoverySettings');
     const parsed = saved ? JSON.parse(saved) : {};
     return {
-      aiProvider: parsed.aiProvider || 'groq',
+      aiProvider: 'gemini',
       geminiApiKey: parsed.geminiApiKey || import.meta.env.VITE_GEMINI_API_KEY || '',
-      geminiModel: parsed.geminiModel || 'gemini-1.5-flash',
-      groqApiKey: parsed.groqApiKey || import.meta.env.VITE_GROQ_API_KEY || '',
-      groqModel: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'meta-llama/llama-4-scout-17b-16e-instruct', 'qwen/qwen3.6-27b', 'openai/gpt-oss-120b'].includes(parsed.groqModel) ? parsed.groqModel : 'llama-3.3-70b-versatile'
+      geminiModel: parsed.geminiModel || 'gemini-3.7-flash',
     };
   });
 
-  const saveSettings = () => {
+  // Fetch from DB on mount
+  useEffect(() => {
+    axios.get('/api/whatsapp-settings?action=ai_credentials')
+      .then(res => {
+        if (res.data?.geminiApiKey) {
+          setSettings(prev => ({ ...prev, geminiApiKey: res.data.geminiApiKey }));
+        }
+      })
+      .catch(err => console.error('Failed to load AI credentials', err));
+  }, []);
+
+  const saveSettings = async () => {
     localStorage.setItem('shopifyStoreUrl', localStoreUrl.trim());
     localStorage.setItem('shopifyAccessToken', localAccessToken.trim());
     localStorage.setItem('shopifyStoreName', localStoreName.trim());
@@ -1325,6 +1334,13 @@ function SettingsModal({ storeUrl, setStoreUrl, accessToken, setAccessToken, sto
     setStoreLogoUrl(localStoreLogoUrl.trim());
 
     localStorage.setItem('recoverySettings', JSON.stringify(settings));
+    
+    try {
+      await axios.post('/api/whatsapp-settings?action=ai_credentials', { geminiApiKey: settings.geminiApiKey });
+    } catch (err) {
+      console.error('Failed to save AI credentials', err);
+    }
+    
     onClose();
   };
 
@@ -1422,12 +1438,11 @@ function SettingsModal({ storeUrl, setStoreUrl, accessToken, setAccessToken, sto
                 <h3 className="font-semibold text-white flex items-center gap-2 text-sm">
                   <Sparkles className="w-4 h-4 text-yellow-500" /> AI Engine Configuration
                 </h3>
-                <p className="text-[11px] text-slate-400 leading-relaxed">Configure the AI Provider and models for the AI Copilot.</p>
+                <p className="text-[11px] text-slate-400 leading-relaxed">Configure the Google Gemini AI Provider and models for the AI Copilot.</p>
                 <div>
                   <label className="block text-xs font-medium text-slate-400 mb-1">AI Provider</label>
                   <select value={settings.aiProvider} onChange={e => setSettings({ ...settings, aiProvider: e.target.value })} className="w-full px-3 py-2 border border-slate-700 bg-slate-800 text-white rounded-xl text-sm focus:ring-2 focus:ring-yellow-500/50 outline-none">
                     <option value="gemini">Google Gemini</option>
-                    <option value="groq">Groq</option>
                   </select>
                 </div>
 
@@ -1440,28 +1455,9 @@ function SettingsModal({ storeUrl, setStoreUrl, accessToken, setAccessToken, sto
                     <div>
                       <label className="block text-xs font-medium text-slate-400 mb-1">Gemini Model</label>
                       <select value={settings.geminiModel} onChange={e => setSettings({ ...settings, geminiModel: e.target.value })} className="w-full px-3 py-2 border border-slate-700 bg-slate-800 text-white rounded-xl text-sm focus:ring-2 focus:ring-yellow-500/50 outline-none">
-                        <option value="gemini-1.5-flash">Gemini 1.5 Flash (Recommended)</option>
-                        <option value="gemini-1.5-pro-latest">Gemini 1.5 Pro</option>
-                        <option value="gemini-2.0-flash-exp">Gemini 2.0 Flash</option>
-                      </select>
-                    </div>
-                  </>
-                )}
-
-                {settings.aiProvider === 'groq' && (
-                  <>
-                    <div>
-                      <label className="block text-xs font-medium text-slate-400 mb-1">Groq API Key</label>
-                      <input type="password" value={settings.groqApiKey} onChange={e => setSettings({ ...settings, groqApiKey: e.target.value })} className="w-full px-3 py-2 border border-slate-700 bg-slate-800 text-white rounded-xl text-sm focus:ring-2 focus:ring-yellow-500/50 outline-none" placeholder="gsk_..." />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-slate-400 mb-1">Groq Model</label>
-                      <select value={settings.groqModel} onChange={e => setSettings({ ...settings, groqModel: e.target.value })} className="w-full px-3 py-2 border border-slate-700 bg-slate-800 text-white rounded-xl text-sm focus:ring-2 focus:ring-yellow-500/50 outline-none">
-                        <option value="llama-3.3-70b-versatile">Llama 3.3 70B Versatile (Recommended)</option>
-                        <option value="llama-3.1-8b-instant">Llama 3.1 8B Instant</option>
-                        <option value="meta-llama/llama-4-scout-17b-16e-instruct">Llama 4 Scout 17B (Preview)</option>
-                        <option value="qwen/qwen3.6-27b">Qwen 3.6 27B</option>
-                        <option value="openai/gpt-oss-120b">GPT-OSS 120B</option>
+                        <option value="gemini-3.7-flash">Gemini 3.7 Flash (Recommended Main)</option>
+                        <option value="gemini-3.6-flash">Gemini 3.6 Flash (Fallback)</option>
+                        <option value="gemini-3.1-pro">Gemini 3.1 Pro (2nd Fallback)</option>
                       </select>
                     </div>
                   </>

@@ -116,6 +116,33 @@ export default async function handler(req, res) {
     }
   }
 
+  // Handle 'ai_credentials' action
+  if (req.query.action === 'ai_credentials') {
+    if (req.method === 'GET') {
+      try {
+        const { data } = await axios.get(`${SUPABASE_URL}/rest/v1/whatsapp_settings?select=gemini_api_key,id&limit=1`, { headers });
+        return res.status(200).json({ success: true, geminiApiKey: data?.[0]?.gemini_api_key || '' });
+      } catch (err) {
+        return res.status(500).json({ error: err.message });
+      }
+    }
+    if (req.method === 'POST') {
+      try {
+        const { geminiApiKey } = req.body;
+        const { data: existing } = await axios.get(`${SUPABASE_URL}/rest/v1/whatsapp_settings?select=id&limit=1`, { headers });
+        if (existing && existing.length > 0) {
+          await axios.patch(`${SUPABASE_URL}/rest/v1/whatsapp_settings?id=eq.${existing[0].id}`, { gemini_api_key: geminiApiKey, updated_at: new Date().toISOString() }, { headers: { ...headers, 'Prefer': 'return=representation' } });
+        } else {
+          await axios.post(`${SUPABASE_URL}/rest/v1/whatsapp_settings`, { gemini_api_key: geminiApiKey }, { headers: { ...headers, 'Prefer': 'return=representation' } });
+        }
+        return res.status(200).json({ success: true });
+      } catch (err) {
+        return res.status(500).json({ error: err.message });
+      }
+    }
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+
   // Handle 'toggle_ai' action
   if (req.query.action === 'toggle_ai') {
     if (req.method === 'POST') {

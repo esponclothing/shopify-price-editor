@@ -12,81 +12,46 @@ const PROCESSED_WEBHOOK_IDS = new Set();
 
 // Helper: Call AI APIs with Fallback Chain (Supports Groq and Gemini)
 async function callGeminiAPI(messages, apiKey, jsonMode = false, maxTokens = 250) {
-  const isGroq = apiKey && apiKey.startsWith('gsk_');
-
-  if (isGroq) {
-    // 3 Dynamically Verified Active Fallback models for Groq
-    const groqModels = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768'];
-    let lastError = null;
-    
-    for (const model of groqModels) {
-      try {
-        console.log(`[AI Fallback] Testing Groq model: ${model}`);
-        const payload = {
-          model,
-          messages,
-          temperature: 0.4,
-          max_tokens: maxTokens,
-        };
-        if (jsonMode) payload.response_format = { type: "json_object" };
-        
-        const res = await axios.post('https://api.groq.com/openai/v1/chat/completions', payload, {
-          headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-          timeout: 10000
-        });
-        
-        if (res.data?.choices?.[0]?.message?.content) {
-          return res.data.choices[0].message.content.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
-        }
-      } catch (err) {
-        console.error(`[AI Fallback] Groq model ${model} failed:`, err.response?.data?.error?.message || err.message);
-        lastError = err;
-        await new Promise(r => setTimeout(r, 500));
-      }
+  // 3 Dynamically Verified Active Fallback models for Gemini (As requested)
+  const geminiModels = ['gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.1-pro'];
+  let lastError = null;
+  
+  let systemInstruction = null;
+  const contents = [];
+  for (const msg of messages) {
+    if (msg.role === 'system') {
+      systemInstruction = { parts: [{ text: msg.content }] };
+    } else {
+      contents.push({
+        role: msg.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: msg.content }]
+      });
     }
-    throw new Error('All Groq fallback models failed: ' + (lastError?.message || 'Unknown error'));
-  } else {
-    // 3 Dynamically Verified Active Fallback models for Gemini
-    const geminiModels = ['gemini-flash-latest', 'gemini-flash-lite-latest', 'gemini-2.5-flash-image'];
-    let lastError = null;
-    
-    let systemInstruction = null;
-    const contents = [];
-    for (const msg of messages) {
-      if (msg.role === 'system') {
-        systemInstruction = { parts: [{ text: msg.content }] };
-      } else {
-        contents.push({
-          role: msg.role === 'assistant' ? 'model' : 'user',
-          parts: [{ text: msg.content }]
-        });
-      }
-    }
-    
-    for (const model of geminiModels) {
-      try {
-        console.log(`[AI Fallback] Testing Gemini model: ${model}`);
-        const payload = {
-          contents,
-          generationConfig: { temperature: 0.4, maxOutputTokens: maxTokens }
-        };
-        if (systemInstruction) payload.systemInstruction = systemInstruction;
-        if (jsonMode) payload.generationConfig.responseMimeType = "application/json";
-
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-        const res = await axios.post(url, payload, { headers: { 'Content-Type': 'application/json' }, timeout: 10000 });
-        
-        if (res.data?.candidates?.[0]?.content?.parts?.[0]?.text) {
-          return res.data.candidates[0].content.parts[0].text;
-        }
-      } catch (err) {
-        console.error(`[AI Fallback] Gemini model ${model} failed:`, err.response?.data?.error?.message || err.message);
-        lastError = err;
-        await new Promise(r => setTimeout(r, 500));
-      }
-    }
-    throw new Error('All Gemini fallback models failed: ' + (lastError?.message || 'Unknown error'));
   }
+  
+  for (const model of geminiModels) {
+    try {
+      console.log(`[AI Fallback] Testing Gemini model: ${model}`);
+      const payload = {
+        contents,
+        generationConfig: { temperature: 0.4, maxOutputTokens: maxTokens }
+      };
+      if (systemInstruction) payload.systemInstruction = systemInstruction;
+      if (jsonMode) payload.generationConfig.responseMimeType = "application/json";
+
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+      const res = await axios.post(url, payload, { headers: { 'Content-Type': 'application/json' }, timeout: 10000 });
+      
+      if (res.data?.candidates?.[0]?.content?.parts?.[0]?.text) {
+        return res.data.candidates[0].content.parts[0].text;
+      }
+    } catch (err) {
+      console.error(`[AI Fallback] Gemini model ${model} failed:`, err.response?.data?.error?.message || err.message);
+      lastError = err;
+      await new Promise(r => setTimeout(r, 500));
+    }
+  }
+  throw new Error('All Gemini fallback models failed: ' + (lastError?.message || 'Unknown error'));
 }
 // Log execution to whatsapp_executions table via Supabase REST API
 async function logExecution({ phone, user_message, ai_reply, status, tools_called, error_message, duration_ms }) {
@@ -1455,16 +1420,15 @@ ${userText}`;
 
       // Fallback model list removed; using Gemini directly
 
-      // Try to load dynamic Groq API key from Supabase settings (allows changing from app UI)
-      let activeGroqKey = 'AQ.Ab8RN6J-54eZLqYDuD80EuP-nzMFBgC4gFxwFw74oCeCsfiUHA';
+      // Fetch dynamic Gemini API key from database
+      let activeGeminiKey = process.env.VITE_GEMINI_API_KEY || '';
       try {
         const settingsRes = await axios.get(
-          `${SUPABASE_URL}/rest/v1/whatsapp_settings?select=groq_api_key&order=id.desc&limit=1`,
+          `${SUPABASE_URL}/rest/v1/whatsapp_settings?select=gemini_api_key&limit=1`,
           { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } }
         );
-        if (false && settingsRes.data?.[0]?.groq_api_key && 
-           (settingsRes.data[0].groq_api_key.startsWith('AQ.') || settingsRes.data[0].groq_api_key.startsWith('AIza'))) {
-          activeGroqKey = settingsRes.data[0].groq_api_key;
+        if (settingsRes.data?.[0]?.gemini_api_key) {
+          activeGeminiKey = settingsRes.data[0].gemini_api_key;
         }
       } catch (_) { /* fallback to env key */ }
 
@@ -1474,7 +1438,7 @@ ${userText}`;
         const urgencyPrompt = 'You are an urgency detector. If the user message is angry, complaining, threatening, asking for a refund, missing order, fraud, or claiming a delay, output "URGENT". Otherwise output "NORMAL". Output ONLY that single word.';
         urgencyPromise = callGeminiAPI(
           [{ role: 'system', content: urgencyPrompt }, { role: 'user', content: userText }],
-          activeGroqKey, false, 10
+          activeGeminiKey, false, 10
         ).then(async urgency => {
           if (urgency?.trim() === 'URGENT') {
              await axios.post(
@@ -1487,14 +1451,14 @@ ${userText}`;
       }
 
       let aiReply = null;
-      let usedModel = 'gemini-1.5-flash';
+      let usedModel = 'gemini-3.7-flash';
       try {
         aiReply = await callGeminiAPI(
           [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: userText }
           ],
-          activeGroqKey, false, 600
+          activeGeminiKey, false, 600
         );
       } catch (modelErr) {
         console.error(`Gemini model failed:`, modelErr.message);
@@ -1535,7 +1499,7 @@ ${userText}`;
           { role: 'system', content: 'You are a customer segmentation bot. Analyze the customer message and output EXACTLY ONE tag from this list that best describes their intent/status: [VIP, Angry, Bargain Hunter, Needs Big Sizes, Return/Exchange, General Inquiry, Looking to Buy]. Output NOTHING ELSE. Just the tag.' },
           { role: 'user', content: userText }
         ],
-        activeGroqKey, false, 15
+        activeGeminiKey, false, 15
       ).then(async tagRes => {
          let tag = tagRes;
          if (tag) {
