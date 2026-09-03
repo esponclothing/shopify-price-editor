@@ -39,11 +39,9 @@ async function run() {
       let def = c.column_default ? ` DEFAULT ${c.column_default}` : '';
       let nullStr = c.is_nullable === 'YES' ? '' : ' NOT NULL';
       
-      // Cleanup defaults that cause issues across dialects
       if (def.includes('::') || def.includes('auth.uid()') || def.includes('uuid_generate_v4()')) {
-        def = ''; // Remove unsupported defaults
+        def = ''; 
       }
-      
       cols.push(`"${c.column_name}" ${type}${nullStr}${def}`);
     }
 
@@ -70,7 +68,8 @@ async function run() {
       }
     }
 
-    // 3. Copy Data
+    // 3. Copy Data in Batches
+    console.log(`  Fetching data...`);
     const dataRes = await sbClient.query(`SELECT * FROM "${table}"`);
     const rows = dataRes.rows;
     if (rows.length === 0) {
@@ -78,25 +77,39 @@ async function run() {
       continue;
     }
     
-    console.log(`  Copying ${rows.length} rows...`);
+    console.log(`  Copying ${rows.length} rows using batch inserts...`);
     const columns = Object.keys(rows[0]);
     const colStr = columns.map(c => `"${c}"`).join(', ');
     
-    // Batch insert
-    for (const row of rows) {
-      const values = columns.map(c => {
-        const val = row[c];
-        if (Array.isArray(val)) return JSON.stringify(val);
-        if (typeof val === 'object' && val !== null) return JSON.stringify(val);
-        return val;
-      });
-      const valPlaceholders = values.map((_, i) => `$${i + 1}`).join(', ');
-      try {
-        await rwClient.query(`INSERT INTO "${table}" (${colStr}) VALUES (${valPlaceholders}) ON CONFLICT DO NOTHING`, values);
-      } catch (e) {
-        console.error(`  Error inserting row into ${table}: ${e.message}`);
+    const BATCH_SIZE = 500;
+    for (let i = 0; i < rows.length; i += BATCH_SIZE) {
+      const batchRows = rows.slice(i, i + BATCH_SIZE);
+      let valuesStrArray = [];
+      let flatValues = [];
+      let paramIndex = 1;
+      
+      for (const row of batchRows) {
+        const rowParams = [];
+        for (const c of columns) {
+          let val = row[c];
+          if (Array.isArray(val)) val = JSON.stringify(val);
+          else if (typeof val === 'object' && val !== null) val = JSON.stringify(val);
+          
+          flatValues.push(val);
+          rowParams.push(`$${paramIndex++}`);
+        }
+        valuesStrArray.push(`(${rowParams.join(', ')})`);
       }
+      
+      const query = `INSERT INTO "${table}" (${colStr}) VALUES ${valuesStrArray.join(', ')} ON CONFLICT DO NOTHING`;
+      try {
+        await rwClient.query(query, flatValues);
+      } catch (e) {
+        console.error(`  Batch insert error on table ${table}: ${e.message}`);
+      }
+      process.stdout.write(`\r  Inserted ${Math.min(i + BATCH_SIZE, rows.length)} / ${rows.length}`);
     }
+    console.log();
   }
 
   console.log('\nMigration complete!');
