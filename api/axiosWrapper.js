@@ -40,13 +40,15 @@ async function interceptSupabase(method, url, data = null, config = {}) {
   }
 }
 
-const axiosProxy = {
-  get: (url, config) => interceptSupabase('GET', url, null, config),
-  post: (url, data, config) => interceptSupabase('POST', url, data, config),
-  patch: (url, data, config) => interceptSupabase('PATCH', url, data, config),
-  delete: (url, config) => interceptSupabase('DELETE', url, null, config),
-  put: (url, data, config) => interceptSupabase('PUT', url, data, config),
-  request: (config) => interceptSupabase(config.method || 'GET', config.url, config.data, config)
+const axiosProxy = function(config) {
+  return interceptSupabase(config.method || 'GET', config.url, config.data, config);
 };
+
+axiosProxy.get = (url, config) => interceptSupabase('GET', url, null, config);
+axiosProxy.post = (url, data, config) => interceptSupabase('POST', url, data, config);
+axiosProxy.patch = (url, data, config) => interceptSupabase('PATCH', url, data, config);
+axiosProxy.delete = (url, config) => interceptSupabase('DELETE', url, null, config);
+axiosProxy.put = (url, data, config) => interceptSupabase('PUT', url, data, config);
+axiosProxy.request = (config) => interceptSupabase(config.method || 'GET', config.url, config.data, config);
 
 export default axiosProxy;
