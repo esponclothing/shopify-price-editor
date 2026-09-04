@@ -1,4 +1,4 @@
-import axios from './dbWrapper.js';
+import axios from 'axios';
 import https from 'https';
 
 export default async function handler(req, res) {

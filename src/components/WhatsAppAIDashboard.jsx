@@ -10,8 +10,6 @@ import {
 } from 'lucide-react';
 import MetaTemplatesManager from './MetaTemplatesManager';
 import ChatbotFlowBuilder from './ChatbotFlowBuilder';
-import OutboundCallOverlay from './OutboundCallOverlay';
-import IncomingCallOverlay from './IncomingCallOverlay';
 function urlBase64ToUint8Array(base64String) {
   const padding = '='.repeat((4 - base64String.length % 4) % 4);
   const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
@@ -4113,13 +4111,9 @@ export default function WhatsAppAIDashboard({ preSelectPhone }) {
         </div>
       )}
       {/* CALLING OVERLAYS */}
-      <IncomingCallOverlay />
+      
       {outboundCall && (
-        <OutboundCallOverlay
-          phone={outboundCall.phone}
-          customerName={outboundCall.customerName}
-          onComplete={() => setOutboundCall(null)}
-        />
+        
       )}
     </div>
   );

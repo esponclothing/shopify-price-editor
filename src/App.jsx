@@ -6,7 +6,6 @@ import AutomatedCampaignsDashboard from './components/AutomatedCampaignsDashboar
 import HomepageManagerDashboard from './components/HomepageManagerDashboard';
 import WhatsAppAIDashboard from './components/WhatsAppAIDashboard';
 import CustomerOrderLookup from './components/CustomerOrderLookup';
-import CallsTab from './components/CallsTab';
 import ReturnExchangeDashboard from './components/ReturnExchangeDashboard';
 import ChatbotFlowBuilder from './components/ChatbotFlowBuilder';
 import AnalyticsDashboard from './components/AnalyticsDashboard';
@@ -364,14 +363,7 @@ export default function App() {
           >
             <Zap className="w-4 h-4 text-emerald-400" /> AI Inbox &amp; Logs
           </button>
-          <button
-            onClick={() => setActiveTab('calls')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all duration-200 ${activeTab === 'calls' ? 'bg-gradient-to-r from-emerald-500/10 to-teal-500/5 text-emerald-400 border border-emerald-500/20' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200 border border-transparent'}`}
-          >
-            <Phone className="w-4 h-4 text-emerald-400" />
-            <span>Calls</span>
-            <span className="ml-auto px-1.5 py-0.5 rounded-md text-[9px] font-extrabold bg-emerald-500 text-slate-950 uppercase">NEW</span>
-          </button>
+          
           <button
             onClick={() => setActiveTab('analytics')}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all duration-200 ${activeTab === 'analytics' ? 'bg-gradient-to-r from-emerald-500/10 to-teal-500/5 text-emerald-400 border border-emerald-500/20' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200 border border-transparent'}`}
