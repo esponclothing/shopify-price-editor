@@ -5,7 +5,7 @@ const { Client } = pg;
 
 async function fetchNFUData() {
   const urls = [
-    process.env.SUPABASE_NFU_DB_URL || 'postgresql://postgres:gEeINngvmFomRYZljhTrKNkKrrjlcrfQ@altaria.proxy.rlwy.net:33107/railway'
+    process.env.SUPABASE_NFU_DB_URL || 'postgresql://postgres:zXuyDwmBoMwdHnUqoFMUIkkKILuEcaas@reseau.proxy.rlwy.net:12168/railway'
   ];
   let otpLogs = [];
   let networkUsers = [];

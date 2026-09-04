@@ -2,7 +2,7 @@ import pg from 'pg';
 const { Pool } = pg;
 
 export const pool = new Pool({
-  connectionString: process.env.RAILWAY_DATABASE_URL || 'postgresql://postgres:gEeINngvmFomRYZljhTrKNkKrrjlcrfQ@altaria.proxy.rlwy.net:33107/railway'
+  connectionString: process.env.RAILWAY_DATABASE_URL || 'postgresql://postgres:zXuyDwmBoMwdHnUqoFMUIkkKILuEcaas@reseau.proxy.rlwy.net:12168/railway'
 });
 
 export async function dbFetch(url, options = {}) {
