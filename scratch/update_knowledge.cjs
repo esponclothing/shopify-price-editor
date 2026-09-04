@@ -1,6 +1,5 @@
 require('dotenv').config();
 const axios = require('axios');
-const SUPABASE_URL = process.env.SUPABASE_URL || 'https://nfubnpgfwgrlpfhcbjlg.supabase.co';
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
 const headers = { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json' };
 
@@ -15,7 +14,7 @@ async function main() {
     ];
 
     for (const qr of quickReplies) {
-      await axios.post(`${SUPABASE_URL}/rest/v1/whatsapp_quick_replies`, qr, { headers });
+      await axios.post(`/rest/v1/whatsapp_quick_replies`, qr, { headers });
       console.log(`Added quick reply: ${qr.label}`);
     }
 
@@ -29,9 +28,9 @@ async function main() {
 - Website: www.11fit.in`;
 
     // Fetch the latest settings row
-    const { data: settings } = await axios.get(`${SUPABASE_URL}/rest/v1/whatsapp_settings?select=id&order=id.desc&limit=1`, { headers });
+    const { data: settings } = await axios.get(`/rest/v1/whatsapp_settings?select=id&order=id.desc&limit=1`, { headers });
     if (settings && settings.length > 0) {
-      await axios.patch(`${SUPABASE_URL}/rest/v1/whatsapp_settings?id=eq.${settings[0].id}`, {
+      await axios.patch(`/rest/v1/whatsapp_settings?id=eq.${settings[0].id}`, {
         inst_brand_policies: newBrandPolicy
       }, { headers });
       console.log("Updated existing whatsapp_settings row id:", settings[0].id);

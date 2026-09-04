@@ -2,8 +2,6 @@
 // Run: node create_whatsapp_calls_table.cjs
 // Creates the whatsapp_calls table in Supabase for the calling feature
 
-const SUPABASE_URL = 'https://xkiukbebnntjzfilyfmh.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhraXVrYmVibm50anpmaWx5Zm1oIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4NTIyMjExOCwiZXhwIjoyMTAwNzk4MTE4fQ.bqc4x9ok4pgmcffKPpj-BOUELvAli5weCJtwuL4X7Rc';
 
 const sql = `
 CREATE TABLE IF NOT EXISTS whatsapp_calls (
@@ -29,7 +27,7 @@ ALTER PUBLICATION supabase_realtime ADD TABLE whatsapp_calls;
 
 async function run() {
   try {
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/exec_sql`, {
+    const res = await fetch(`/rest/v1/rpc/exec_sql`, {
       method: 'POST',
       headers: {
         'apikey': SUPABASE_KEY,
@@ -40,13 +38,13 @@ async function run() {
     });
 
     // Try direct SQL endpoint instead
-    const res2 = await fetch(`${SUPABASE_URL}/rest/v1/`, {
+    const res2 = await fetch(`/rest/v1/`, {
       headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
     });
 
     console.log('Trying direct table creation via Supabase Management API...');
     // Use the postgres REST endpoint
-    const createRes = await fetch(`${SUPABASE_URL}/rest/v1/whatsapp_calls?limit=1`, {
+    const createRes = await fetch(`/rest/v1/whatsapp_calls?limit=1`, {
       headers: {
         'apikey': SUPABASE_KEY,
         'Authorization': `Bearer ${SUPABASE_KEY}`

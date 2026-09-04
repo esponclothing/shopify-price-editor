@@ -5,7 +5,7 @@ export const pool = new Pool({
   connectionString: process.env.RAILWAY_DATABASE_URL || 'postgresql://postgres:gEeINngvmFomRYZljhTrKNkKrrjlcrfQ@altaria.proxy.rlwy.net:33107/railway'
 });
 
-export async function supabaseFetch(url, options = {}) {
+export async function dbFetch(url, options = {}) {
   try {
     const urlObj = new URL(url, 'http://dummy.internal');
     const pathParts = urlObj.pathname.split('/');
@@ -123,7 +123,7 @@ export async function supabaseFetch(url, options = {}) {
     };
 
   } catch (error) {
-    console.error('supabaseFetch Error:', error);
+    console.error('dbFetch Error:', error);
     return {
       ok: false,
       status: 500,

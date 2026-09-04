@@ -1,6 +1,5 @@
 const axios = require('axios');
 
-const SUPABASE_URL = process.env.SUPABASE_URL || 'https://xkiukbebnntjzfilyfmh.supabase.co';
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhraXVrYmVibm50anpmaWx5Zm1oIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4NTIyMjExOCwiZXhwIjoyMTAwNzk4MTE4fQ.bqc4x9ok4pgmcffKPpj-BOUELvAli5weCJtwuL4X7Rc';
 
 const headers = {
@@ -11,7 +10,7 @@ const headers = {
 
 async function setup() {
   try {
-    await axios.post(`${SUPABASE_URL}/rest/v1/rpc/exec_sql`, {
+    await axios.post(`/rest/v1/rpc/exec_sql`, {
       sql: `
         CREATE TABLE IF NOT EXISTS whatsapp_quick_replies (
           id BIGSERIAL PRIMARY KEY,
@@ -31,7 +30,7 @@ async function setup() {
       { label: 'Warehouse Check', text: "I'll need to check with our warehouse team regarding the stock for this item. Please give me a few minutes." },
     ];
     for (const r of replies) {
-        await axios.post(`${SUPABASE_URL}/rest/v1/whatsapp_quick_replies`, r, { headers }).catch(() => {});
+        await axios.post(`/rest/v1/whatsapp_quick_replies`, r, { headers }).catch(() => {});
     }
     console.log("Setup complete");
   } catch (e) {

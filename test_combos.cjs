@@ -1,7 +1,5 @@
 const axios = require('./node_modules/axios/dist/node/axios.cjs');
 
-const SUPABASE_URL = 'https://xkiukbebnntjzfilyfmh.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhraXVrYmVibm50anpmaWx5Zm1oIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4NTIyMjExOCwiZXhwIjoyMTAwNzk4MTE4fQ.bqc4x9ok4pgmcffKPpj-BOUELvAli5weCJtwuL4X7Rc';
 const SHOPIFY_STORE_URL = 'i2tu0d-jc.myshopify.com';
 // Get from .env or hardcode for test
 const SHOPIFY_ACCESS_TOKEN = process.env.VITE_SHOPIFY_ACCESS_TOKEN || '';
@@ -9,7 +7,7 @@ const SHOPIFY_ACCESS_TOKEN = process.env.VITE_SHOPIFY_ACCESS_TOKEN || '';
 async function test() {
   console.log('\n=== STEP 1: Supabase Combos ===');
   const dbRes = await axios.get(
-    `${SUPABASE_URL}/rest/v1/shopify_combos?is_active=eq.true&order=updated_at.desc`,
+    `/rest/v1/shopify_combos?is_active=eq.true&order=updated_at.desc`,
     { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } }
   );
   const dbCombos = dbRes.data || [];

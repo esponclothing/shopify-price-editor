@@ -1,6 +1,5 @@
-import axios from './axiosWrapper.js';
+import axios from './dbWrapper.js';
 
-const SUPABASE_URL = process.env.SUPABASE_URL || 'https://xkiukbebnntjzfilyfmh.supabase.co';
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhraXVrYmVibm50anpmaWx5Zm1oIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4NTIyMjExOCwiZXhwIjoyMTAwNzk4MTE4fQ.bqc4x9ok4pgmcffKPpj-BOUELvAli5weCJtwuL4X7Rc';
 
 export default async function handler(req, res) {
@@ -19,7 +18,7 @@ export default async function handler(req, res) {
     try {
       // Fetch recent 200 memory logs
       const memRes = await axios.get(
-        `${SUPABASE_URL}/rest/v1/whatsapp_chat_memory?select=*&order=created_at.desc&limit=250`,
+        `/rest/v1/whatsapp_chat_memory?select=*&order=created_at.desc&limit=250`,
         { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } }
       );
       const rows = memRes.data || [];
@@ -28,7 +27,7 @@ export default async function handler(req, res) {
       let settingsMap = {};
       try {
         const setRes = await axios.get(
-          `${SUPABASE_URL}/rest/v1/whatsapp_chat_settings?select=phone,ai_paused,customer_name,chat_status,tags`,
+          `/rest/v1/whatsapp_chat_settings?select=phone,ai_paused,customer_name,chat_status,tags`,
           { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } }
         );
         (setRes.data || []).forEach(s => {
@@ -47,7 +46,7 @@ export default async function handler(req, res) {
       let ordersInfoMap = {};
       try {
         const ordRes = await axios.get(
-          `${SUPABASE_URL}/rest/v1/shopify_orders?select=phone_last10,alt_phone_last10,fulfillment_status,cancelled_at,order_data&phone_last10=not.is.null&order=created_at.desc&limit=500`,
+          `/rest/v1/shopify_orders?select=phone_last10,alt_phone_last10,fulfillment_status,cancelled_at,order_data&phone_last10=not.is.null&order=created_at.desc&limit=500`,
           { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } }
         );
         (ordRes.data || []).forEach(o => {
@@ -142,7 +141,7 @@ export default async function handler(req, res) {
     if (!phone) return res.status(400).json({ error: 'phone parameter required' });
     try {
       const memRes = await axios.get(
-        `${SUPABASE_URL}/rest/v1/whatsapp_chat_memory?phone=eq.${encodeURIComponent(phone)}&select=*&order=created_at.desc&limit=100`,
+        `/rest/v1/whatsapp_chat_memory?phone=eq.${encodeURIComponent(phone)}&select=*&order=created_at.desc&limit=100`,
         { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } }
       );
       const messages = (memRes.data || []).reverse();
@@ -161,7 +160,7 @@ export default async function handler(req, res) {
     let token = process.env.WHATSAPP_TOKEN;
     try {
       const settingsRes = await axios.get(
-        `${SUPABASE_URL}/rest/v1/whatsapp_settings?select=whatsapp_token&order=id.desc&limit=1`,
+        `/rest/v1/whatsapp_settings?select=whatsapp_token&order=id.desc&limit=1`,
         { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } }
       );
       if (settingsRes.data?.[0]?.whatsapp_token) token = settingsRes.data[0].whatsapp_token;
@@ -197,7 +196,7 @@ export default async function handler(req, res) {
   // 2C. FETCH AI EXECUTIONS LOGS
   if (req.method === 'GET' && action === 'executions') {
     try {
-      const url = `${SUPABASE_URL}/rest/v1/whatsapp_executions?select=*&order=created_at.desc&limit=150`;
+      const url = `/rest/v1/whatsapp_executions?select=*&order=created_at.desc&limit=150`;
       const response = await axios.get(url, {
         headers: {
           'apikey': SUPABASE_KEY,
@@ -239,7 +238,7 @@ export default async function handler(req, res) {
     if (postAction === 'toggle_ai') {
       try {
         await axios.post(
-          `${SUPABASE_URL}/rest/v1/whatsapp_chat_settings`,
+          `/rest/v1/whatsapp_chat_settings`,
           { phone, ai_paused: !!ai_paused, updated_at: new Date().toISOString() },
           {
             headers: {
@@ -262,7 +261,7 @@ export default async function handler(req, res) {
       const { chat_status } = req.body;
       try {
         await axios.post(
-          `${SUPABASE_URL}/rest/v1/whatsapp_chat_settings`,
+          `/rest/v1/whatsapp_chat_settings`,
           { phone, chat_status: chat_status || 'open', updated_at: new Date().toISOString() },
           {
             headers: {
@@ -287,7 +286,7 @@ export default async function handler(req, res) {
       if (type === 'internal_note') {
         try {
           await axios.post(
-            `${SUPABASE_URL}/rest/v1/whatsapp_chat_memory`,
+            `/rest/v1/whatsapp_chat_memory`,
             { phone, role: 'internal_note', content: text || '' },
             { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json' } }
           );
@@ -300,7 +299,7 @@ export default async function handler(req, res) {
       let token = process.env.WHATSAPP_TOKEN;
       try {
         const settingsRes = await axios.get(
-          `${SUPABASE_URL}/rest/v1/whatsapp_settings?select=whatsapp_token&order=id.desc&limit=1`,
+          `/rest/v1/whatsapp_settings?select=whatsapp_token&order=id.desc&limit=1`,
           { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } }
         );
         if (settingsRes.data?.[0]?.whatsapp_token) {
@@ -401,7 +400,7 @@ export default async function handler(req, res) {
 
         try {
           await axios.post(
-            `${SUPABASE_URL}/rest/v1/whatsapp_chat_memory`,
+            `/rest/v1/whatsapp_chat_memory`,
             { phone, role: 'assistant', content: displayContent },
             {
               headers: {
@@ -412,7 +411,7 @@ export default async function handler(req, res) {
             }
           );
           await axios.post(
-            `${SUPABASE_URL}/rest/v1/whatsapp_chat_settings`,
+            `/rest/v1/whatsapp_chat_settings`,
             { phone, chat_status: 'open', updated_at: new Date().toISOString() },
             {
               headers: {
@@ -442,7 +441,7 @@ export default async function handler(req, res) {
       let token = process.env.WHATSAPP_TOKEN;
       try {
         const settingsRes = await axios.get(
-          `${SUPABASE_URL}/rest/v1/whatsapp_settings?select=whatsapp_token&order=id.desc&limit=1`,
+          `/rest/v1/whatsapp_settings?select=whatsapp_token&order=id.desc&limit=1`,
           { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } }
         );
         if (settingsRes.data?.[0]?.whatsapp_token) token = settingsRes.data[0].whatsapp_token;
@@ -511,12 +510,12 @@ export default async function handler(req, res) {
 
         try {
           await axios.post(
-            `${SUPABASE_URL}/rest/v1/whatsapp_chat_memory`,
+            `/rest/v1/whatsapp_chat_memory`,
             { phone, role: 'assistant', content: displayContent },
             { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json' } }
           );
           await axios.post(
-            `${SUPABASE_URL}/rest/v1/whatsapp_chat_settings`,
+            `/rest/v1/whatsapp_chat_settings`,
             { phone, chat_status: 'open', updated_at: new Date().toISOString() },
             {
               headers: {

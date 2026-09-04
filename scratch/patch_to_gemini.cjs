@@ -26,7 +26,7 @@ const tagReplacement = `callGeminiAPI(
              if (tag) {
                tag = tag.replace(/[^a-zA-Z\\s\\/]/g, '').trim(); // sanitize
                await axios.post(
-                 \`\${SUPABASE_URL}/rest/v1/whatsapp_chat_settings\`,
+                 \`\/rest/v1/whatsapp_chat_settings\`,
                  { phone: senderPhone, tags: [tag], updated_at: new Date().toISOString() },
                  { headers: { 'apikey': SUPABASE_KEY, 'Authorization': \`Bearer \${SUPABASE_KEY}\`, 'Content-Type': 'application/json', 'Prefer': 'resolution=merge-duplicates' } }
                );

@@ -1,11 +1,9 @@
 const axios = require('axios');
 
-const SUPABASE_URL = 'https://xkiukbebnntjzfilyfmh.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhraXVrYmVibm50anpmaWx5Zm1oIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUyMjIxMTgsImV4cCI6MjEwMDc5ODExOH0.ZY1RADk9yfq_X_vH7SbkubOSi1MUcLy2iWkLPBHGVNs';
 
 async function test(phone) {
   console.log('Testing phone:', phone);
-  const url = `${SUPABASE_URL}/rest/v1/shopify_orders?or=(phone_last10.eq.${phone},alt_phone_last10.eq.${phone})&order=created_at.desc`;
+  const url = `/rest/v1/shopify_orders?or=(phone_last10.eq.${phone},alt_phone_last10.eq.${phone})&order=created_at.desc`;
   try {
     const res = await axios.get(url, {
       headers: {

@@ -1,11 +1,10 @@
-import axios from './axiosWrapper.js';
-import { supabaseFetch } from './supabaseFetch.js';
+import axios from './dbWrapper.js';
+import { dbFetch } from './dbFetch.js';
 
 // api/returns.js
 // Return & Exchange Request API for 11fit
 // Handles: create, list (customer+admin), update status, add tracking, photo upload
 
-const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
 const ADMIN_SECRET = process.env.ADMIN_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY;
 const RETURN_WINDOW_DAYS = 7; // 7 days from delivered date
@@ -18,8 +17,8 @@ function cors(res) {
 
 async function supabaseRequest(path, options = {}) {
   const url = `/rest/v1/${path}`; // Use relative path for shim
-  const res = await supabaseFetch(url, options);
-  // supabaseFetch shim already returns { ok, status, data }
+  const res = await dbFetch(url, options);
+  // dbFetch shim already returns { ok, status, data }
   return res;
 }
 
@@ -63,7 +62,7 @@ async function dispatchWhatsAppStatusNotification(request) {
 
     if (!templateName) return; // No notification for this status
 
-    const setRes = await fetch(`${SUPABASE_URL}/rest/v1/whatsapp_settings?select=whatsapp_token,phone_number_id,workflows&order=id.desc&limit=1`, {
+    const setRes = await dbFetch(`/rest/v1/whatsapp_settings?select=whatsapp_token,phone_number_id,workflows&order=id.desc&limit=1`, {
       headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
     });
     const row = (await setRes.json())[0] || {};
@@ -396,9 +395,7 @@ export default async function handler(req, res) {
     return res.status(200).json({ orders: [] });
   }
 
-  const supabaseUrl = process.env.SUPABASE_URL;
-  const supabaseKey = process.env.SUPABASE_ANON_KEY;
-
+    
   const clientStore = req.headers['x-client-store-url'] || process.env.VITE_SHOPIFY_STORE_URL || 'i2tu0d-jc.myshopify.com';
   const clientToken = req.headers['x-client-access-token'] || process.env.VITE_SHOPIFY_ACCESS_TOKEN || process.env.SHOPIFY_ACCESS_TOKEN || '';
 
@@ -458,7 +455,7 @@ export default async function handler(req, res) {
           const tracking_company = fulfillment?.tracking_company || null;
           const tracking_url = fulfillment?.tracking_url || (fulfillment?.tracking_urls && fulfillment.tracking_urls[0]) || null;
 
-          return fetch(`${supabaseUrl}/rest/v1/shopify_orders`, {
+          return dbFetch(`/rest/v1/shopify_orders`, {
             method: 'POST',
             headers: {
               'apikey': supabaseKey,
@@ -496,8 +493,7 @@ export default async function handler(req, res) {
   // STEP 2: FALLBACK TO SUPABASE POSTGRES DATABASE IF SHOPIFY IS UNREACHABLE OR HAS NO MATCH
   if (supabaseUrl && supabaseKey) {
     try {
-      const dbRes = await fetch(
-        `${supabaseUrl}/rest/v1/shopify_orders?or=(phone_last10.eq.${last10},alt_phone_last10.eq.${last10})&order=created_at.desc`,
+      const dbRes = await dbFetch(`/rest/v1/shopify_orders?or=(phone_last10.eq.${last10},alt_phone_last10.eq.${last10})&order=created_at.desc`,
         {
           headers: {
             'apikey': supabaseKey,

@@ -1,8 +1,7 @@
-import axios from './axiosWrapper.js';
+import axios from './dbWrapper.js';
 import pg from 'pg';
 import FormData from 'form-data';
 
-const SUPABASE_URL = process.env.SUPABASE_URL || 'https://xkiukbebnntjzfilyfmh.supabase.co';
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhraXVrYmVibm50anpmaWx5Zm1oIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4NTIyMjExOCwiZXhwIjoyMTAwNzk4MTE4fQ.bqc4x9ok4pgmcffKPpj-BOUELvAli5weCJtwuL4X7Rc';
 
 const supabaseHeaders = {
@@ -27,7 +26,7 @@ export default async function handler(req, res) {
     let phoneId = '1189183190949431';
     try {
       const setRes = await axios.get(
-        `${SUPABASE_URL}/rest/v1/whatsapp_settings?select=whatsapp_token,waba_id,phone_number_id&order=id.desc&limit=1`,
+        `/rest/v1/whatsapp_settings?select=whatsapp_token,waba_id,phone_number_id&order=id.desc&limit=1`,
         { headers: supabaseHeaders }
       );
       if (setRes.data?.[0]) {
@@ -207,12 +206,12 @@ export default async function handler(req, res) {
     const { id } = req.query;
     try {
       if (id) {
-        const bRes = await axios.get(`${SUPABASE_URL}/rest/v1/whatsapp_broadcasts?id=eq.${id}`, { headers: supabaseHeaders });
+        const bRes = await axios.get(`/rest/v1/whatsapp_broadcasts?id=eq.${id}`, { headers: supabaseHeaders });
         if (!bRes.data || bRes.data.length === 0) throw new Error('Not found');
-        const lRes = await axios.get(`${SUPABASE_URL}/rest/v1/whatsapp_broadcast_logs?broadcast_id=eq.${id}&order=updated_at.desc`, { headers: supabaseHeaders });
+        const lRes = await axios.get(`/rest/v1/whatsapp_broadcast_logs?broadcast_id=eq.${id}&order=updated_at.desc`, { headers: supabaseHeaders });
         return res.status(200).json({ success: true, broadcast: bRes.data[0], logs: lRes.data });
       } else {
-        const resList = await axios.get(`${SUPABASE_URL}/rest/v1/whatsapp_broadcasts?order=created_at.desc`, { headers: supabaseHeaders });
+        const resList = await axios.get(`/rest/v1/whatsapp_broadcasts?order=created_at.desc`, { headers: supabaseHeaders });
         return res.status(200).json({ success: true, broadcasts: resList.data });
       }
     } catch (err) {
@@ -239,7 +238,7 @@ export default async function handler(req, res) {
           status: 'completed',
           scheduled_at: new Date().toISOString()
         };
-        const insertRes = await axios.post(`${SUPABASE_URL}/rest/v1/whatsapp_broadcasts`, bPayload, {
+        const insertRes = await axios.post(`/rest/v1/whatsapp_broadcasts`, bPayload, {
           headers: { ...supabaseHeaders, 'Prefer': 'return=representation' }
         }).catch(() => null);
         
@@ -282,7 +281,7 @@ export default async function handler(req, res) {
         
         // 2. Insert Logs in bulk
         if (logPayloads.length > 0) {
-           await axios.post(`${SUPABASE_URL}/rest/v1/whatsapp_broadcast_logs`, logPayloads, { headers: supabaseHeaders }).catch(() => null);
+           await axios.post(`/rest/v1/whatsapp_broadcast_logs`, logPayloads, { headers: supabaseHeaders }).catch(() => null);
         }
         
         return res.status(200).json({ success: true, message: `Sent to ${sentCount} contacts` });
@@ -326,7 +325,7 @@ export default async function handler(req, res) {
           customers = unique;
 
           if (seg === 'signed_up_not_ordered') {
-            const ord = await axios.get(`${SUPABASE_URL}/rest/v1/shopify_orders?select=phone_last10&phone_last10=not.is.null`, { headers: supabaseHeaders });
+            const ord = await axios.get(`/rest/v1/shopify_orders?select=phone_last10&phone_last10=not.is.null`, { headers: supabaseHeaders });
             const orderedPhones = new Set(ord.data.map(r => r.phone_last10));
             customers = customers.filter(c => !orderedPhones.has(c.phone_last10));
           }
@@ -342,11 +341,11 @@ export default async function handler(req, res) {
       const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
       
       if (seg === 'last_30_days') {
-        const res = await axios.get(`${SUPABASE_URL}/rest/v1/shopify_orders?select=phone_last10,customer_name,name,order_number,tracking_url&phone_last10=not.is.null&created_at=gte.${thirtyDaysAgo}&order=created_at.desc`, { headers: supabaseHeaders });
+        const res = await axios.get(`/rest/v1/shopify_orders?select=phone_last10,customer_name,name,order_number,tracking_url&phone_last10=not.is.null&created_at=gte.${thirtyDaysAgo}&order=created_at.desc`, { headers: supabaseHeaders });
         data = res.data;
       } else if (seg === 'custom' && segment_config) {
         // Fetch a generous chunk and filter in-memory for complex rules
-        const res = await axios.get(`${SUPABASE_URL}/rest/v1/shopify_orders?select=phone_last10,customer_name,name,order_number,tracking_url,order_data,total_price&phone_last10=not.is.null&order=created_at.desc&limit=10000`, { headers: supabaseHeaders });
+        const res = await axios.get(`/rest/v1/shopify_orders?select=phone_last10,customer_name,name,order_number,tracking_url,order_data,total_price&phone_last10=not.is.null&order=created_at.desc&limit=10000`, { headers: supabaseHeaders });
         data = res.data.filter(order => {
           let match = true;
           if (segment_config.minSpend && parseFloat(order.total_price) < parseFloat(segment_config.minSpend)) match = false;
@@ -366,12 +365,12 @@ export default async function handler(req, res) {
           return match;
         });
       } else if (seg === 'no_orders_30_days') {
-        const resAll = await axios.get(`${SUPABASE_URL}/rest/v1/shopify_orders?select=phone_last10,customer_name,name,order_number,tracking_url&phone_last10=not.is.null&order=created_at.desc`, { headers: supabaseHeaders });
-        const resRecent = await axios.get(`${SUPABASE_URL}/rest/v1/shopify_orders?select=phone_last10&phone_last10=not.is.null&created_at=gte.${thirtyDaysAgo}`, { headers: supabaseHeaders });
+        const resAll = await axios.get(`/rest/v1/shopify_orders?select=phone_last10,customer_name,name,order_number,tracking_url&phone_last10=not.is.null&order=created_at.desc`, { headers: supabaseHeaders });
+        const resRecent = await axios.get(`/rest/v1/shopify_orders?select=phone_last10&phone_last10=not.is.null&created_at=gte.${thirtyDaysAgo}`, { headers: supabaseHeaders });
         const recentPhones = new Set(resRecent.data.map(r => r.phone_last10));
         data = resAll.data.filter(c => !recentPhones.has(c.phone_last10));
       } else {
-        const res = await axios.get(`${SUPABASE_URL}/rest/v1/shopify_orders?select=phone_last10,customer_name,name,order_number,tracking_url&phone_last10=not.is.null&order=created_at.desc`, { headers: supabaseHeaders });
+        const res = await axios.get(`/rest/v1/shopify_orders?select=phone_last10,customer_name,name,order_number,tracking_url&phone_last10=not.is.null&order=created_at.desc`, { headers: supabaseHeaders });
         data = res.data;
       }
 
@@ -407,11 +406,11 @@ export default async function handler(req, res) {
         const { broadcast_id } = req.body;
         if (!broadcast_id) throw new Error('broadcast_id is required');
         
-        const bRes = await axios.get(`${SUPABASE_URL}/rest/v1/whatsapp_broadcasts?id=eq.${broadcast_id}`, { headers: supabaseHeaders });
+        const bRes = await axios.get(`/rest/v1/whatsapp_broadcasts?id=eq.${broadcast_id}`, { headers: supabaseHeaders });
         const broadcast = bRes.data?.[0];
         if (!broadcast) throw new Error('Broadcast not found');
 
-        const lRes = await axios.get(`${SUPABASE_URL}/rest/v1/whatsapp_broadcast_logs?broadcast_id=eq.${broadcast_id}&select=phone`, { headers: supabaseHeaders });
+        const lRes = await axios.get(`/rest/v1/whatsapp_broadcast_logs?broadcast_id=eq.${broadcast_id}&select=phone`, { headers: supabaseHeaders });
         const targetedPhones = new Set(lRes.data.map(l => l.phone.slice(-10)));
         
         if (targetedPhones.size === 0) {
@@ -421,7 +420,7 @@ export default async function handler(req, res) {
         const bDate = new Date(broadcast.created_at);
         const endDate = new Date(bDate.getTime() + 7 * 24 * 60 * 60 * 1000);
         
-        const ordersRes = await axios.get(`${SUPABASE_URL}/rest/v1/shopify_orders?select=phone_last10,total_price,order_number&created_at=gte.${bDate.toISOString()}&created_at=lte.${endDate.toISOString()}`, { headers: supabaseHeaders });
+        const ordersRes = await axios.get(`/rest/v1/shopify_orders?select=phone_last10,total_price,order_number&created_at=gte.${bDate.toISOString()}&created_at=lte.${endDate.toISOString()}`, { headers: supabaseHeaders });
         
         let attributedRevenue = 0;
         let attributedOrders = 0;
@@ -446,7 +445,7 @@ export default async function handler(req, res) {
         
         const preUploadedMediaId = await resolveHeaderMediaId(template_components, header_media_url, token, phoneId, wabaId, template_name);
         
-        const cRes = await axios.get(`${SUPABASE_URL}/rest/v1/shopify_orders?select=phone_last10,customer_name,name,order_number,tracking_url&limit=1`, { headers: supabaseHeaders });
+        const cRes = await axios.get(`/rest/v1/shopify_orders?select=phone_last10,customer_name,name,order_number,tracking_url&limit=1`, { headers: supabaseHeaders });
         const dummyRow = cRes.data[0] || { customer_name: 'Test User', order_number: 9999, phone_last10: test_phone };
         
         const fullPhone = test_phone.length === 10 ? '91' + test_phone : test_phone;
@@ -505,7 +504,7 @@ export default async function handler(req, res) {
             segment_config
           }
         };
-        const bRes = await axios.post(`${SUPABASE_URL}/rest/v1/whatsapp_broadcasts`, bPayload, {
+        const bRes = await axios.post(`/rest/v1/whatsapp_broadcasts`, bPayload, {
           headers: { ...supabaseHeaders, 'Prefer': 'return=representation' }
         });
         const broadcastId = bRes.data[0].id;
@@ -536,19 +535,19 @@ export default async function handler(req, res) {
               });
               const wamid = metaRes.data.messages?.[0]?.id;
               
-              await axios.post(`${SUPABASE_URL}/rest/v1/whatsapp_broadcast_logs`, {
+              await axios.post(`/rest/v1/whatsapp_broadcast_logs`, {
                 broadcast_id: broadcastId, phone: fullPhone, status: 'sent', wamid
               }, { headers: supabaseHeaders });
               
               const previewText = getTemplatePreviewText(template_name, template_components, components);
-              await axios.post(`${SUPABASE_URL}/rest/v1/whatsapp_chat_memory`, {
+              await axios.post(`/rest/v1/whatsapp_chat_memory`, {
                 phone: fullPhone, role: 'assistant', message: previewText
               }, { headers: supabaseHeaders }).catch(() => {});
               
               sent++;
             } catch (sendErr) {
               failed++;
-              await axios.post(`${SUPABASE_URL}/rest/v1/whatsapp_broadcast_logs`, {
+              await axios.post(`/rest/v1/whatsapp_broadcast_logs`, {
                 broadcast_id: broadcastId, phone: fullPhone, status: 'failed', error_message: sendErr.response?.data?.error?.message || sendErr.message
               }, { headers: supabaseHeaders });
             }
@@ -558,13 +557,13 @@ export default async function handler(req, res) {
 
           // Update stats every 50 messages
           if ((sent + failed) % 50 === 0) {
-            await axios.patch(`${SUPABASE_URL}/rest/v1/whatsapp_broadcasts?id=eq.${broadcastId}`, {
+            await axios.patch(`/rest/v1/whatsapp_broadcasts?id=eq.${broadcastId}`, {
               sent_count: sent, failed_count: failed
             }, { headers: supabaseHeaders });
           }
         }
         
-        await axios.patch(`${SUPABASE_URL}/rest/v1/whatsapp_broadcasts?id=eq.${broadcastId}`, {
+        await axios.patch(`/rest/v1/whatsapp_broadcasts?id=eq.${broadcastId}`, {
           status: 'completed', sent_count: sent, failed_count: failed
         }, { headers: supabaseHeaders });
 
@@ -581,7 +580,7 @@ export default async function handler(req, res) {
         const { token, phoneId } = await fetchSettings();
 
         // 1. Fetch broadcast and config
-        const bRes = await axios.get(`${SUPABASE_URL}/rest/v1/whatsapp_broadcasts?id=eq.${broadcast_id}`, { headers: supabaseHeaders });
+        const bRes = await axios.get(`/rest/v1/whatsapp_broadcasts?id=eq.${broadcast_id}`, { headers: supabaseHeaders });
         const broadcast = bRes.data?.[0];
         if (!broadcast) return res.status(404).json({ success: false, error: 'Broadcast not found.' });
         if (!broadcast.config) return res.status(400).json({ success: false, error: 'Cannot retry this broadcast because it was created before the Config update. Please create a new broadcast.' });
@@ -589,12 +588,12 @@ export default async function handler(req, res) {
         const { template_components, variables_mapping, header_media_url, pre_uploaded_media_id } = broadcast.config;
 
         // 2. Fetch failed logs
-        const lRes = await axios.get(`${SUPABASE_URL}/rest/v1/whatsapp_broadcast_logs?broadcast_id=eq.${broadcast_id}&status=eq.failed`, { headers: supabaseHeaders });
+        const lRes = await axios.get(`/rest/v1/whatsapp_broadcast_logs?broadcast_id=eq.${broadcast_id}&status=eq.failed`, { headers: supabaseHeaders });
         const failedLogs = lRes.data || [];
         if (failedLogs.length === 0) return res.status(200).json({ success: true, message: 'No failed messages to retry.' });
 
         // 3. Setup status to 'running'
-        await axios.patch(`${SUPABASE_URL}/rest/v1/whatsapp_broadcasts?id=eq.${broadcast_id}`, { status: 'running' }, { headers: supabaseHeaders });
+        await axios.patch(`/rest/v1/whatsapp_broadcasts?id=eq.${broadcast_id}`, { status: 'running' }, { headers: supabaseHeaders });
 
         let retriedSent = 0;
         let retriedFailed = 0;
@@ -605,7 +604,7 @@ export default async function handler(req, res) {
             // Ideally we query the customer again, but for now we try to map if we can or just use phone
             const customer = { phone_last10: log.phone.replace(/^91/, ''), customer_name: 'Customer', order_number: '', tracking_url: '' };
             // Let's attempt to fetch actual customer data based on phone
-            const cRes = await axios.get(`${SUPABASE_URL}/rest/v1/shopify_orders?select=phone_last10,customer_name,name,order_number,tracking_url&phone_last10=eq.${customer.phone_last10}&limit=1`, { headers: supabaseHeaders });
+            const cRes = await axios.get(`/rest/v1/shopify_orders?select=phone_last10,customer_name,name,order_number,tracking_url&phone_last10=eq.${customer.phone_last10}&limit=1`, { headers: supabaseHeaders });
             const actualCustomer = cRes.data?.[0] || customer;
 
             const components = buildTemplateComponents(actualCustomer, variables_mapping, template_components, header_media_url, pre_uploaded_media_id);
@@ -621,19 +620,19 @@ export default async function handler(req, res) {
             });
             const wamid = metaRes.data.messages?.[0]?.id;
 
-            await axios.patch(`${SUPABASE_URL}/rest/v1/whatsapp_broadcast_logs?id=eq.${log.id}`, {
+            await axios.patch(`/rest/v1/whatsapp_broadcast_logs?id=eq.${log.id}`, {
               status: 'sent', wamid, error_message: null, updated_at: new Date().toISOString()
             }, { headers: supabaseHeaders });
             
             const previewText = getTemplatePreviewText(broadcast.template_name, template_components, components);
-            await axios.post(`${SUPABASE_URL}/rest/v1/whatsapp_chat_memory`, {
+            await axios.post(`/rest/v1/whatsapp_chat_memory`, {
               phone: log.phone, role: 'assistant', message: previewText
             }, { headers: supabaseHeaders }).catch(() => {});
             
             retriedSent++;
           } catch (err) {
             retriedFailed++;
-            await axios.patch(`${SUPABASE_URL}/rest/v1/whatsapp_broadcast_logs?id=eq.${log.id}`, {
+            await axios.patch(`/rest/v1/whatsapp_broadcast_logs?id=eq.${log.id}`, {
               error_message: err.response?.data?.error?.message || err.message, updated_at: new Date().toISOString()
             }, { headers: supabaseHeaders });
           }
@@ -643,7 +642,7 @@ export default async function handler(req, res) {
         // 4. Update the final counts
         const sentCount = (broadcast.sent_count || 0) + retriedSent;
         const failedCount = Math.max(0, (broadcast.failed_count || 0) - retriedSent);
-        await axios.patch(`${SUPABASE_URL}/rest/v1/whatsapp_broadcasts?id=eq.${broadcast_id}`, {
+        await axios.patch(`/rest/v1/whatsapp_broadcasts?id=eq.${broadcast_id}`, {
           status: 'completed', sent_count: sentCount, failed_count: failedCount
         }, { headers: supabaseHeaders });
 
@@ -660,14 +659,14 @@ export default async function handler(req, res) {
         const { token, phoneId } = await fetchSettings();
 
         // 1. Fetch broadcast and config
-        const bRes = await axios.get(`${SUPABASE_URL}/rest/v1/whatsapp_broadcasts?id=eq.${broadcast_id}`, { headers: supabaseHeaders });
+        const bRes = await axios.get(`/rest/v1/whatsapp_broadcasts?id=eq.${broadcast_id}`, { headers: supabaseHeaders });
         const broadcast = bRes.data?.[0];
         if (!broadcast || broadcast.status !== 'scheduled') throw new Error('Broadcast not found or not scheduled');
         
         const { template_components, variables_mapping, header_media_url, pre_uploaded_media_id } = broadcast.config;
 
         // 2. Setup status to 'running'
-        await axios.patch(`${SUPABASE_URL}/rest/v1/whatsapp_broadcasts?id=eq.${broadcast_id}`, { status: 'running' }, { headers: supabaseHeaders });
+        await axios.patch(`/rest/v1/whatsapp_broadcasts?id=eq.${broadcast_id}`, { status: 'running' }, { headers: supabaseHeaders });
 
         const customers = await getCustomersForSegment(broadcast.segment);
         let sent = 0, failed = 0;
@@ -688,27 +687,27 @@ export default async function handler(req, res) {
               });
               const wamid = metaRes.data.messages?.[0]?.id;
               
-              await axios.post(`${SUPABASE_URL}/rest/v1/whatsapp_broadcast_logs`, {
+              await axios.post(`/rest/v1/whatsapp_broadcast_logs`, {
                 broadcast_id, phone: fullPhone, status: 'sent', wamid
               }, { headers: supabaseHeaders });
               
               sent++;
             } catch (sendErr) {
               failed++;
-              await axios.post(`${SUPABASE_URL}/rest/v1/whatsapp_broadcast_logs`, {
+              await axios.post(`/rest/v1/whatsapp_broadcast_logs`, {
                 broadcast_id, phone: fullPhone, status: 'failed', error_message: sendErr.response?.data?.error?.message || sendErr.message
               }, { headers: supabaseHeaders });
             }
             await new Promise(r => setTimeout(r, 100)); // Rate limit
 
           if ((sent + failed) % 50 === 0) {
-            await axios.patch(`${SUPABASE_URL}/rest/v1/whatsapp_broadcasts?id=eq.${broadcast_id}`, {
+            await axios.patch(`/rest/v1/whatsapp_broadcasts?id=eq.${broadcast_id}`, {
               sent_count: sent, failed_count: failed
             }, { headers: supabaseHeaders });
           }
         }
         
-        await axios.patch(`${SUPABASE_URL}/rest/v1/whatsapp_broadcasts?id=eq.${broadcast_id}`, {
+        await axios.patch(`/rest/v1/whatsapp_broadcasts?id=eq.${broadcast_id}`, {
           status: 'completed', sent_count: sent, failed_count: failed
         }, { headers: supabaseHeaders });
 

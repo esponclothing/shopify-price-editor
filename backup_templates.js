@@ -1,8 +1,6 @@
 import axios from 'axios';
 import fs from 'fs';
 
-const SUPABASE_URL = 'https://xkiukbebnntjzfilyfmh.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhraXVrYmVibm50anpmaWx5Zm1oIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4NTIyMjExOCwiZXhwIjoyMTAwNzk4MTE4fQ.bqc4x9ok4pgmcffKPpj-BOUELvAli5weCJtwuL4X7Rc';
 
 const supabaseHeaders = {
   'apikey': SUPABASE_KEY,
@@ -13,7 +11,7 @@ const supabaseHeaders = {
 async function backup() {
   try {
     const setRes = await axios.get(
-      `${SUPABASE_URL}/rest/v1/whatsapp_settings?select=whatsapp_token,waba_id&order=id.desc&limit=1`,
+      `/rest/v1/whatsapp_settings?select=whatsapp_token,waba_id&order=id.desc&limit=1`,
       { headers: supabaseHeaders }
     );
     

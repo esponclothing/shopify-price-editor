@@ -1,8 +1,8 @@
+import { dbFetch } from './dbFetch.js';
 // api/whatsapp-calling.js
 // WhatsApp Business Calling API handler for 11FIT
 // Handles: incoming call webhooks, answer, decline, end, call logs
 
-const SUPABASE_URL = process.env.SUPABASE_URL || 'https://xkiukbebnntjzfilyfmh.supabase.co';
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhraXVrYmVibm50anpmaWx5Zm1oIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4NTIyMjExOCwiZXhwIjoyMTAwNzk4MTE4fQ.bqc4x9ok4pgmcffKPpj-BOUELvAli5weCJtwuL4X7Rc';
 const WA_PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID || '1189183190949431';
 
@@ -14,7 +14,7 @@ function cors(res) {
 
 async function getWAToken() {
   try {
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/whatsapp_settings?select=whatsapp_token&order=id.desc&limit=1`, {
+    const res = await dbFetch(`/rest/v1/whatsapp_settings?select=whatsapp_token&order=id.desc&limit=1`, {
       headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
     });
     const rows = await res.json();
@@ -23,7 +23,7 @@ async function getWAToken() {
 }
 
 async function supabase(path, method = 'GET', body = null, extra = {}) {
-  const url = `${SUPABASE_URL}/rest/v1/${path}`;
+  const url = `/rest/v1/${path}`;
   const headers = {
     'apikey': SUPABASE_KEY,
     'Authorization': `Bearer ${SUPABASE_KEY}`,

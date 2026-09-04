@@ -5,8 +5,6 @@
 const axios = require('./node_modules/axios/dist/node/axios.cjs');
 
 const GEMINI_API_KEY = 'AQ.Ab8RN6J-54eZLqYDuD80EuP-nzMFBgC4gFxwFw74oCeCsfiUHA';
-const SUPABASE_URL = 'https://xkiukbebnntjzfilyfmh.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhraXVrYmVibm50anpmaWx5Zm1oIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4NTIyMjExOCwiZXhwIjoyMTAwNzk4MTE4fQ.bqc4x9ok4pgmcffKPpj-BOUELvAli5weCJtwuL4X7Rc';
 
 // Quick system prompt (abbreviated for testing)
 const systemPrompt = `You are "11FIT AI Stylist & Sales Assistant" for 11FIT (www.11fit.in), India's premium men's sportswear brand.

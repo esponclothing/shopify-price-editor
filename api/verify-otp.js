@@ -1,3 +1,4 @@
+import { dbFetch } from './dbFetch.js';
 import crypto from 'crypto';
 
 const OTP_SECRET = process.env.OTP_SECRET || '11fit-secure-otp-secret-key';
@@ -28,14 +29,12 @@ export default async function handler(req, res) {
 
   // Helper function to log to Supabase
   const logToSupabase = (status) => {
-    const supabaseUrl = process.env.SUPABASE_URL;
-    const supabaseKey = process.env.SUPABASE_ANON_KEY;
-    if (supabaseUrl && supabaseKey) {
+            if (supabaseUrl && supabaseKey) {
       let formattedPhone = phone;
       if (!formattedPhone.startsWith('+')) {
         formattedPhone = '+91' + formattedPhone;
       }
-      fetch(`${supabaseUrl}/rest/v1/otp_logs`, {
+      dbFetch(`/rest/v1/otp_logs`, {
         method: 'POST',
         headers: {
           'apikey': supabaseKey,
@@ -203,15 +202,13 @@ export default async function handler(req, res) {
     // ==========================================
     // IDENTITY NETWORK LINKING
     // ==========================================
-    const supabaseUrl = process.env.SUPABASE_URL;
-    const supabaseKey = process.env.SUPABASE_ANON_KEY;
-    if (supabaseUrl && supabaseKey) {
+            if (supabaseUrl && supabaseKey) {
       let formattedPhone = phone;
       if (!formattedPhone.startsWith('+')) {
         formattedPhone = '+91' + formattedPhone;
       }
       // Upsert into network_users (so phone exists)
-      fetch(`${supabaseUrl}/rest/v1/network_users`, {
+      dbFetch(`/rest/v1/network_users`, {
         method: 'POST',
         headers: {
           'apikey': supabaseKey,
@@ -224,7 +221,7 @@ export default async function handler(req, res) {
         // Upsert into network_devices if device_id is provided
         if (device_id || cleanIp !== 'unknown') {
           const did = device_id || crypto.randomUUID();
-          fetch(`${supabaseUrl}/rest/v1/network_devices`, {
+          dbFetch(`/rest/v1/network_devices`, {
             method: 'POST',
             headers: {
               'apikey': supabaseKey,

@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { dbFetch } from './dbFetch.js';
 
 const OTP_SECRET = process.env.OTP_SECRET || '11fit-secure-otp-secret-key';
 
@@ -119,25 +120,19 @@ export default async function handler(req, res) {
     // =====================================================================
     // SUPABASE ANALYTICS TRACKING (Background)
     // =====================================================================
-    const supabaseUrl = process.env.SUPABASE_URL;
-    const supabaseKey = process.env.SUPABASE_ANON_KEY;
-    if (supabaseUrl && supabaseKey) {
-      fetch(`${supabaseUrl}/rest/v1/otp_logs`, {
-        method: 'POST',
-        headers: {
-          'apikey': supabaseKey,
-          'Authorization': `Bearer ${supabaseKey}`,
-          'Content-Type': 'application/json',
-          'Prefer': 'return=minimal'
-        },
-        body: JSON.stringify({
-          phone: formattedPhone,
-          merchant_id: 'faadf814-2bb0-44df-a6b0-fed13d14961c',
-          status: 'sent',
-          device_id: typeof ipAddress === 'string' ? ipAddress.split(',')[0].trim() : ipAddress
-        })
-      }).catch(err => console.error('Supabase logging error:', err));
-    }
+    dbFetch(`/rest/v1/otp_logs`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Prefer': 'return=minimal'
+      },
+      body: JSON.stringify({
+        phone: formattedPhone,
+        merchant_id: 'faadf814-2bb0-44df-a6b0-fed13d14961c',
+        status: 'sent',
+        device_id: typeof ipAddress === 'string' ? ipAddress.split(',')[0].trim() : ipAddress
+      })
+    }).catch(err => console.error('DB logging error:', err));
     
     // Return the hash and expiration to the client
     return res.status(200).json({ signature });

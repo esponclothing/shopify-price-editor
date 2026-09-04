@@ -1,11 +1,10 @@
-import axios from './axiosWrapper.js';
+import axios from './dbWrapper.js';
 
 // Permanent Credentials
 const SHOPIFY_STORE_URL = process.env.VITE_SHOPIFY_STORE_URL || 'i2tu0d-jc.myshopify.com';
 const SHOPIFY_ACCESS_TOKEN = process.env.VITE_SHOPIFY_ACCESS_TOKEN || '';
 const GROQ_API_KEY = process.env.VITE_GROQ_API_KEY || '';
 
-const SUPABASE_URL = process.env.SUPABASE_URL || 'https://xkiukbebnntjzfilyfmh.supabase.co';
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhraXVrYmVibm50anpmaWx5Zm1oIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4NTIyMjExOCwiZXhwIjoyMTAwNzk4MTE4fQ.bqc4x9ok4pgmcffKPpj-BOUELvAli5weCJtwuL4X7Rc';
 
 const PROCESSED_WEBHOOK_IDS = new Set();
@@ -57,7 +56,7 @@ async function callGeminiAPI(messages, apiKey, jsonMode = false, maxTokens = 250
 async function logExecution({ phone, user_message, ai_reply, status, tools_called, error_message, duration_ms }) {
   try {
     await axios.post(
-      `${SUPABASE_URL}/rest/v1/whatsapp_executions`,
+      `/rest/v1/whatsapp_executions`,
       { phone: phone || 'N/A', user_message: user_message || '', ai_reply: ai_reply || '', status, tools_called: tools_called || 'None', error_message: error_message || null, duration_ms: duration_ms || 0 },
       {
         headers: {
@@ -76,7 +75,7 @@ async function logExecution({ phone, user_message, ai_reply, status, tools_calle
 async function saveChatMessage(phone, role, content) {
   try {
     await axios.post(
-      `${SUPABASE_URL}/rest/v1/whatsapp_chat_memory`,
+      `/rest/v1/whatsapp_chat_memory`,
       { phone, role, content },
       {
         headers: {
@@ -106,7 +105,7 @@ async function sendPushNotificationToAll(title, body, data = { url: '/' }) {
   if (!global.webpush) return;
   try {
     const subRes = await axios.get(
-      `${SUPABASE_URL}/rest/v1/push_subscriptions?select=subscription`,
+      `/rest/v1/push_subscriptions?select=subscription`,
       { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } }
     );
     const subs = subRes.data || [];
@@ -132,7 +131,7 @@ async function sendPushNotificationToAll(title, body, data = { url: '/' }) {
         } catch (err) {
           if (err.statusCode === 410 || err.statusCode === 404) {
             await axios.delete(
-              `${SUPABASE_URL}/rest/v1/push_subscriptions?endpoint=eq.${encodeURIComponent(subscription.endpoint)}`,
+              `/rest/v1/push_subscriptions?endpoint=eq.${encodeURIComponent(subscription.endpoint)}`,
               { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } }
             ).catch(() => {});
           }
@@ -153,7 +152,7 @@ async function dispatchFlowMessage(toPhone, node, variables) {
   let token = process.env.WHATSAPP_TOKEN || '';
   try {
     const settingsRes = await axios.get(
-      `${SUPABASE_URL}/rest/v1/whatsapp_settings?select=whatsapp_token&order=id.desc&limit=1`,
+      `/rest/v1/whatsapp_settings?select=whatsapp_token&order=id.desc&limit=1`,
       { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } }
     );
     if (settingsRes.data?.[0]?.whatsapp_token) token = settingsRes.data[0].whatsapp_token;
@@ -247,7 +246,7 @@ async function executeFlowEngine(senderPhone, userText) {
   try {
     // 1. Check if user is currently IN A FLOW
     const stateRes = await axios.get(
-      `${SUPABASE_URL}/rest/v1/whatsapp_flow_states?phone=eq.${senderPhone}&select=*,whatsapp_flows(flow_json)`, 
+      `/rest/v1/whatsapp_flow_states?phone=eq.${senderPhone}&select=*,whatsapp_flows(flow_json)`, 
       { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } }
     );
     const userState = stateRes.data?.[0];
@@ -271,10 +270,10 @@ async function executeFlowEngine(senderPhone, userText) {
           if (node.type === 'tag') {
             const tagsArr = inter(node.data.tags || '').split(',').map(t => t.trim()).filter(Boolean);
             if (tagsArr.length > 0) {
-              const { data: currSet } = await axios.get(`${SUPABASE_URL}/rest/v1/whatsapp_chat_settings?phone=eq.${senderPhone}&select=tags`, { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } });
+              const { data: currSet } = await axios.get(`/rest/v1/whatsapp_chat_settings?phone=eq.${senderPhone}&select=tags`, { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } });
               let currentTags = currSet?.[0]?.tags || [];
               let newTags = [...new Set([...currentTags, ...tagsArr])];
-              await axios.patch(`${SUPABASE_URL}/rest/v1/whatsapp_chat_settings?phone=eq.${senderPhone}`, { tags: newTags }, { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } });
+              await axios.patch(`/rest/v1/whatsapp_chat_settings?phone=eq.${senderPhone}`, { tags: newTags }, { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } });
             }
           } else if (node.type === 'api_webhook') {
             const method = node.data.method || 'POST';
@@ -346,7 +345,7 @@ async function executeFlowEngine(senderPhone, userText) {
 
             if (ms > 5000) {
                // LONG DELAY - SCHEDULE IT (Needs `whatsapp_scheduled_messages` table to exist)
-               await axios.post(`${SUPABASE_URL}/rest/v1/whatsapp_scheduled_messages`, {
+               await axios.post(`/rest/v1/whatsapp_scheduled_messages`, {
                  phone: senderPhone,
                  flow_json: flow,
                  current_node_id: node.id,
@@ -368,7 +367,7 @@ async function executeFlowEngine(senderPhone, userText) {
 
         if (node.type === 'quick_reply' || node.type === 'input_capture' || node.type === 'list_message') {
           // Interactive! Pause execution here and wait for next user message
-          await axios.patch(`${SUPABASE_URL}/rest/v1/whatsapp_flow_states?phone=eq.${senderPhone}`, {
+          await axios.patch(`/rest/v1/whatsapp_flow_states?phone=eq.${senderPhone}`, {
             current_node_id: node.id,
             variables,
             updated_at: new Date().toISOString()
@@ -393,7 +392,7 @@ async function executeFlowEngine(senderPhone, userText) {
       // User is stuck in a flow node (like Input or Quick Reply)
       const flow = userState.whatsapp_flows?.flow_json;
       if (!flow) {
-        await axios.delete(`${SUPABASE_URL}/rest/v1/whatsapp_flow_states?phone=eq.${senderPhone}`, { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } });
+        await axios.delete(`/rest/v1/whatsapp_flow_states?phone=eq.${senderPhone}`, { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } });
         return false;
       }
 
@@ -428,18 +427,18 @@ async function executeFlowEngine(senderPhone, userText) {
 
       if (!nextEdge) {
         // Flow finished! Clear state
-        await axios.delete(`${SUPABASE_URL}/rest/v1/whatsapp_flow_states?phone=eq.${senderPhone}`, { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } });
+        await axios.delete(`/rest/v1/whatsapp_flow_states?phone=eq.${senderPhone}`, { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } });
         return true; // We handled the message, flow ended.
       } else {
         const result = await runNodes(flow, nextEdge.target, variables);
         if (result.status === 'ended') {
-          await axios.delete(`${SUPABASE_URL}/rest/v1/whatsapp_flow_states?phone=eq.${senderPhone}`, { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } });
+          await axios.delete(`/rest/v1/whatsapp_flow_states?phone=eq.${senderPhone}`, { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } });
         }
         return true; // Handled
       }
     } else {
       // User NOT in a flow. Check triggers.
-      const activeFlowsRes = await axios.get(`${SUPABASE_URL}/rest/v1/whatsapp_flows?is_active=eq.true&select=id,flow_json`, { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } });
+      const activeFlowsRes = await axios.get(`/rest/v1/whatsapp_flows?is_active=eq.true&select=id,flow_json`, { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } });
       const activeFlows = activeFlowsRes.data || [];
 
       for (const f of activeFlows) {
@@ -450,7 +449,7 @@ async function executeFlowEngine(senderPhone, userText) {
         for (const t of triggers) {
            if (t.data?.keyword && userText.toLowerCase().trim() === t.data.keyword.toLowerCase().trim()) {
              // START THE FLOW
-             await axios.post(`${SUPABASE_URL}/rest/v1/whatsapp_flow_states`, {
+             await axios.post(`/rest/v1/whatsapp_flow_states`, {
                 phone: senderPhone,
                 flow_id: f.id,
                 current_node_id: t.id,
@@ -461,10 +460,10 @@ async function executeFlowEngine(senderPhone, userText) {
              if (nextEdge) {
                 const result = await runNodes(flow, nextEdge.target, {});
                 if (result.status === 'ended') {
-                  await axios.delete(`${SUPABASE_URL}/rest/v1/whatsapp_flow_states?phone=eq.${senderPhone}`, { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } });
+                  await axios.delete(`/rest/v1/whatsapp_flow_states?phone=eq.${senderPhone}`, { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } });
                 }
              } else {
-                await axios.delete(`${SUPABASE_URL}/rest/v1/whatsapp_flow_states?phone=eq.${senderPhone}`, { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } });
+                await axios.delete(`/rest/v1/whatsapp_flow_states?phone=eq.${senderPhone}`, { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } });
              }
              return true; // Flow intercepted message
            }
@@ -481,7 +480,7 @@ async function executeFlowEngine(senderPhone, userText) {
 async function getChatHistory(phone) {
   try {
     const res = await axios.get(
-      `${SUPABASE_URL}/rest/v1/whatsapp_chat_memory?phone=eq.${encodeURIComponent(phone)}&select=role,content&order=created_at.desc&limit=6`,
+      `/rest/v1/whatsapp_chat_memory?phone=eq.${encodeURIComponent(phone)}&select=role,content&order=created_at.desc&limit=6`,
       {
         headers: {
           'apikey': SUPABASE_KEY,
@@ -511,9 +510,9 @@ async function lookupOrder(orderNumber, senderPhone = '', userText = '', history
       try {
         let queryUrl = '';
         if (pureNum) {
-          queryUrl = `${SUPABASE_URL}/rest/v1/shopify_orders?or=(name.eq.%23${pureNum},order_number.eq.${pureNum})&limit=1`;
+          queryUrl = `/rest/v1/shopify_orders?or=(name.eq.%23${pureNum},order_number.eq.${pureNum})&limit=1`;
         } else if (cleanSender && cleanSender.length === 10) {
-          queryUrl = `${SUPABASE_URL}/rest/v1/shopify_orders?or=(phone_last10.eq.${cleanSender},alt_phone_last10.eq.${cleanSender})&order=created_at.desc&limit=1`;
+          queryUrl = `/rest/v1/shopify_orders?or=(phone_last10.eq.${cleanSender},alt_phone_last10.eq.${cleanSender})&order=created_at.desc&limit=1`;
         }
 
         if (queryUrl) {
@@ -625,7 +624,7 @@ async function searchProducts(userText) {
   if (SUPABASE_URL && SUPABASE_KEY) {
     try {
       const dbRes = await axios.get(
-        `${SUPABASE_URL}/rest/v1/shopify_combos?is_active=eq.true&order=updated_at.desc`,
+        `/rest/v1/shopify_combos?is_active=eq.true&order=updated_at.desc`,
         {
           headers: {
             'apikey': SUPABASE_KEY,
@@ -785,7 +784,7 @@ async function sendWhatsAppProductCards(toPhone, cards) {
   let token = process.env.WHATSAPP_TOKEN || 'EAAM99yhroGsBSGl4Hqpz75Axd5ZAWUF2wVNOMx0yIJCeEehWE7Dwe8qAaFckBDIw95JmL0rHwBK9rgUp9eA6jBdTZB5NBNLpGcu4mmXcvJ1AasaXmfpoTg2fZAZCjOescX0lUM4KDDZCgT8KQI7ZBw9PpuXMz8oCsI4Xh5BCQgiyhRSQBEPrOWZBQnVEIqBngZDZD';
   try {
     const settingsRes = await axios.get(
-      `${SUPABASE_URL}/rest/v1/whatsapp_settings?select=whatsapp_token&order=id.desc&limit=1`,
+      `/rest/v1/whatsapp_settings?select=whatsapp_token&order=id.desc&limit=1`,
       { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } }
     );
     if (settingsRes.data?.[0]?.whatsapp_token) {
@@ -840,7 +839,7 @@ async function sendWhatsAppMessage(toPhone, textBody) {
   let token = process.env.WHATSAPP_TOKEN || 'EAAM99yhroGsBSGl4Hqpz75Axd5ZAWUF2wVNOMx0yIJCeEehWE7Dwe8qAaFckBDIw95JmL0rHwBK9rgUp9eA6jBdTZB5NBNLpGcu4mmXcvJ1AasaXmfpoTg2fZAZCjOescX0lUM4KDDZCgT8KQI7ZBw9PpuXMz8oCsI4Xh5BCQgiyhRSQBEPrOWZBQnVEIqBngZDZD';
   try {
     const settingsRes = await axios.get(
-      `${SUPABASE_URL}/rest/v1/whatsapp_settings?select=whatsapp_token&order=id.desc&limit=1`,
+      `/rest/v1/whatsapp_settings?select=whatsapp_token&order=id.desc&limit=1`,
       { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } }
     );
     if (settingsRes.data?.[0]?.whatsapp_token) {
@@ -875,7 +874,7 @@ async function sendWhatsAppTyping(toPhone) {
   let token = process.env.WHATSAPP_TOKEN || 'EAAM99yhroGsBSGl4Hqpz75Axd5ZAWUF2wVNOMx0yIJCeEehWE7Dwe8qAaFckBDIw95JmL0rHwBK9rgUp9eA6jBdTZB5NBNLpGcu4mmXcvJ1AasaXmfpoTg2fZAZCjOescX0lUM4KDDZCgT8KQI7ZBw9PpuXMz8oCsI4Xh5BCQgiyhRSQBEPrOWZBQnVEIqBngZDZD';
   try {
     const settingsRes = await axios.get(
-      `${SUPABASE_URL}/rest/v1/whatsapp_settings?select=whatsapp_token&order=id.desc&limit=1`,
+      `/rest/v1/whatsapp_settings?select=whatsapp_token&order=id.desc&limit=1`,
       { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } }
     );
     if (settingsRes.data?.[0]?.whatsapp_token) {
@@ -922,7 +921,7 @@ export default async function handler(req, res) {
         let activeGroqKey = process.env.VITE_GROQ_API_KEY || 'AQ.Ab8RN6J-54eZLqYDuD80EuP-nzMFBgC4gFxwFw74oCeCsfiUHA';
         try {
           const settingsRes = await axios.get(
-            `${SUPABASE_URL}/rest/v1/whatsapp_settings?select=groq_api_key&order=id.desc&limit=1`,
+            `/rest/v1/whatsapp_settings?select=groq_api_key&order=id.desc&limit=1`,
             { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } }
           );
           if (settingsRes.data?.[0]?.groq_api_key && 
@@ -965,7 +964,7 @@ Agent's Note: "${text}"`;
         let activeGroqKey = process.env.VITE_GROQ_API_KEY || 'AQ.Ab8RN6J-54eZLqYDuD80EuP-nzMFBgC4gFxwFw74oCeCsfiUHA';
         try {
           const settingsRes = await axios.get(
-            `${SUPABASE_URL}/rest/v1/whatsapp_settings?select=groq_api_key&order=id.desc&limit=1`,
+            `/rest/v1/whatsapp_settings?select=groq_api_key&order=id.desc&limit=1`,
             { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } }
           );
           if (settingsRes.data?.[0]?.groq_api_key && 
@@ -1045,7 +1044,7 @@ Output ONLY a JSON object containing a "suggestions" array. Example: {"suggestio
       const wabaId = entry?.id;
       if (wabaId && SUPABASE_URL && SUPABASE_KEY) {
         axios.patch(
-          `${SUPABASE_URL}/rest/v1/whatsapp_settings?id=eq.1`,
+          `/rest/v1/whatsapp_settings?id=eq.1`,
           { waba_id: String(wabaId) },
           { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json' } }
         ).catch(() => {});
@@ -1068,7 +1067,7 @@ Output ONLY a JSON object containing a "suggestions" array. Example: {"suggestio
              // Incoming Call from Customer
              const callId = eventObj.id || callSession.id || Date.now().toString();
              await axios.post(
-               `${SUPABASE_URL}/rest/v1/whatsapp_calls`,
+               `/rest/v1/whatsapp_calls`,
                { id: callId, phone: phone, direction: 'inbound', status: 'ringing', started_at: new Date().toISOString(), sdp_offer: sdp },
                { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json' } }
              ).catch(()=>{});
@@ -1087,7 +1086,7 @@ Output ONLY a JSON object containing a "suggestions" array. Example: {"suggestio
          } else if (sdpType === 'answer') {
              // Customer Answered Our Outbound Call
              await axios.patch(
-               `${SUPABASE_URL}/rest/v1/whatsapp_calls?phone=eq.${phone}&status=eq.calling`,
+               `/rest/v1/whatsapp_calls?phone=eq.${phone}&status=eq.calling`,
                { status: 'answered', sdp_answer: sdp, answered_at: new Date().toISOString() },
                { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json' } }
              ).catch(()=>{});
@@ -1095,7 +1094,7 @@ Output ONLY a JSON object containing a "suggestions" array. Example: {"suggestio
          } else if (callObj.action === 'reject' || callObj.action === 'terminate' || eventObj.status === 'failed' || callObj.status === 'rejected') {
              // Customer declined/ended the call
              await axios.patch(
-               `${SUPABASE_URL}/rest/v1/whatsapp_calls?phone=eq.${phone}&order=created_at.desc&limit=1`,
+               `/rest/v1/whatsapp_calls?phone=eq.${phone}&order=created_at.desc&limit=1`,
                { status: 'ended', ended_at: new Date().toISOString() },
                { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json' } }
              ).catch(()=>{});
@@ -1126,7 +1125,7 @@ Output ONLY a JSON object containing a "suggestions" array. Example: {"suggestio
         };
         if (senderName) upsertPayload.customer_name = senderName;
         axios.post(
-          `${SUPABASE_URL}/rest/v1/whatsapp_chat_settings`,
+          `/rest/v1/whatsapp_chat_settings`,
           upsertPayload,
           {
             headers: {
@@ -1246,7 +1245,7 @@ Output ONLY a JSON object containing a "suggestions" array. Example: {"suggestio
       // CHECK IF AI IS PAUSED / MANUAL MODE IS ACTIVE FOR THIS PHONE NUMBER
       try {
         const setRes = await axios.get(
-          `${SUPABASE_URL}/rest/v1/whatsapp_chat_settings?phone=eq.${encodeURIComponent(senderPhone)}&select=ai_paused&limit=1`,
+          `/rest/v1/whatsapp_chat_settings?phone=eq.${encodeURIComponent(senderPhone)}&select=ai_paused&limit=1`,
           { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } }
         );
         if (setRes.data?.[0]?.ai_paused) {
@@ -1271,7 +1270,7 @@ Output ONLY a JSON object containing a "suggestions" array. Example: {"suggestio
         console.log(`[ESCALATION] Angry customer detected for ${senderPhone}. Pausing AI.`);
         try {
           await axios.post(
-            `${SUPABASE_URL}/rest/v1/whatsapp_chat_settings`,
+            `/rest/v1/whatsapp_chat_settings`,
             { phone: senderPhone, ai_paused: true },
             { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Prefer': 'resolution=merge-duplicates' } }
           );
@@ -1349,7 +1348,7 @@ Output ONLY a JSON object containing a "suggestions" array. Example: {"suggestio
       let knowledgeBase = '';
       try {
         const { data: setRows } = await axios.get(
-          `${SUPABASE_URL}/rest/v1/whatsapp_settings?select=*&order=id.desc&limit=1`,
+          `/rest/v1/whatsapp_settings?select=*&order=id.desc&limit=1`,
           { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } }
         );
         const sr = setRows?.[0] || {};
@@ -1424,7 +1423,7 @@ ${userText}`;
       let activeGeminiKey = process.env.VITE_GEMINI_API_KEY || '';
       try {
         const settingsRes = await axios.get(
-          `${SUPABASE_URL}/rest/v1/whatsapp_settings?select=gemini_api_key&limit=1`,
+          `/rest/v1/whatsapp_settings?select=gemini_api_key&limit=1`,
           { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } }
         );
         if (settingsRes.data?.[0]?.gemini_api_key) {
@@ -1442,7 +1441,7 @@ ${userText}`;
         ).then(async urgency => {
           if (urgency?.trim() === 'URGENT') {
              await axios.post(
-               `${SUPABASE_URL}/rest/v1/whatsapp_chat_settings`,
+               `/rest/v1/whatsapp_chat_settings`,
                { phone: senderPhone, chat_status: 'urgent', updated_at: new Date().toISOString() },
                { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'resolution=merge-duplicates' } }
              );
@@ -1505,7 +1504,7 @@ ${userText}`;
          if (tag) {
            tag = tag.replace(/[^a-zA-Z\s\/]/g, '').trim(); // sanitize
            await axios.post(
-             `${SUPABASE_URL}/rest/v1/whatsapp_chat_settings`,
+             `/rest/v1/whatsapp_chat_settings`,
              { phone: senderPhone, tags: [tag], updated_at: new Date().toISOString() },
              { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'resolution=merge-duplicates' } }
            );

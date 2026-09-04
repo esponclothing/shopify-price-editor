@@ -1,3 +1,4 @@
+import { dbFetch } from './dbFetch.js';
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -9,9 +10,7 @@ export default async function handler(req, res) {
     return res.status(200).json({ message: 'No valid order payload found, ignoring' });
   }
 
-  const supabaseUrl = process.env.SUPABASE_URL;
-  const supabaseKey = process.env.SUPABASE_ANON_KEY;
-
+    
   
 
   // 1. Extract phones for indexing
@@ -47,7 +46,7 @@ export default async function handler(req, res) {
 
   try {
     // Upsert into shopify_orders table
-    const upsertRes = await fetch(`${supabaseUrl}/rest/v1/shopify_orders`, {
+    const upsertRes = await dbFetch(`/rest/v1/shopify_orders`, {
       method: 'POST',
       headers: {
         'apikey': supabaseKey,
@@ -90,7 +89,7 @@ export default async function handler(req, res) {
 
       const { first_name, last_name, address1, address2, city, province, zip, country } = order.shipping_address;
 
-      await fetch(`${supabaseUrl}/rest/v1/network_users`, {
+      await dbFetch(`/rest/v1/network_users`, {
         method: 'POST',
         headers: {
           'apikey': supabaseKey,
@@ -159,8 +158,8 @@ export default async function handler(req, res) {
     // -------------------------------------------------------------
     try {
       // Get WA token + workflows from settings
-      const settingsRes = await fetch(`${supabaseUrl}/rest/v1/whatsapp_settings?select=whatsapp_token,workflows&order=id.desc&limit=1`, {
-        headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
+      const settingsRes = await dbFetch(`/rest/v1/whatsapp_settings?select=whatsapp_token,workflows&order=id.desc&limit=1`, {
+        headers: {}
       });
       let settingsData = [];
       if (settingsRes.ok) {

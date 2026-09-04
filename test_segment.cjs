@@ -1,6 +1,5 @@
 const pg = require('pg');
 
-const SUPABASE_URL = process.env.SUPABASE_URL || 'https://xkiukbebnntjzfilyfmh.supabase.co';
 const DB_URL = 'postgres://postgres:11fit@202612@db.xkiukbebnntjzfilyfmh.supabase.co:5432/postgres';
 
 const client = new pg.Client({
