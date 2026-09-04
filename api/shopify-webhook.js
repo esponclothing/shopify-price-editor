@@ -1,4 +1,7 @@
 import { dbFetch } from './dbFetch.js';
+
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhraXVrYmVibm50anpmaWx5Zm1oIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4NTIyMjExOCwiZXhwIjoyMTAwNzk4MTE4fQ.bqc4x9ok4pgmcffKPpj-BOUELvAli5weCJtwuL4X7Rc';
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -9,9 +12,6 @@ export default async function handler(req, res) {
   if (!order || !order.id) {
     return res.status(200).json({ message: 'No valid order payload found, ignoring' });
   }
-
-    
-  
 
   // 1. Extract phones for indexing
   const phones = [
@@ -117,9 +117,9 @@ export default async function handler(req, res) {
     // -------------------------------------------------------------
     try {
       const { Client } = await import('pg');
-      const nfuDbUrl = 'postgres://postgres.nfubnpgfwgrlpfhcbjlg:11fit@202612@aws-0-ap-southeast-2.pooler.supabase.com:6543/postgres';
+      const railwayUrl = process.env.RAILWAY_DATABASE_URL || 'postgresql://postgres:zXuyDwmBoMwdHnUqoFMUIkkKILuEcaas@reseau.proxy.rlwy.net:12168/railway';
       const pgClient = new Client({
-        connectionString: nfuDbUrl,
+        connectionString: railwayUrl,
         ssl: { rejectUnauthorized: false }
       });
       await pgClient.connect();
@@ -159,7 +159,10 @@ export default async function handler(req, res) {
     try {
       // Get WA token + workflows from settings
       const settingsRes = await dbFetch(`/rest/v1/whatsapp_settings?select=whatsapp_token,workflows&order=id.desc&limit=1`, {
-        headers: {}
+        headers: {
+          'apikey': supabaseKey,
+          'Authorization': `Bearer ${supabaseKey}`
+        }
       });
       let settingsData = [];
       if (settingsRes.ok) {
@@ -196,21 +199,20 @@ export default async function handler(req, res) {
         }).join(', ') + (lineItems.length > 3 ? ` +${lineItems.length - 3} more item(s)` : '');
 
         // Detect payment type
-        const tags = (order.tags || '').toLowerCase();
         const totalPrice = parseFloat(order.total_price || 0);
         const totalOutstanding = parseFloat(order.total_outstanding || 0);
         const paymentGateway = (order.payment_gateway || '').toLowerCase();
-        const advanceMatch = order.tags?.match?.(/Advance_Paid_([0-9.]+)/);
+        const advanceMatch = order.tags?.match?.(/Advance_Paid_([0-9.]+)/i);
 
         let templateName, components;
-        const WA_PHONE_ID = '1189183190949431';
+        const WA_PHONE_ID = process.env.WHATSAPP_PHONE_NUMBER_ID || '1189183190949431';
 
+        let paymentInfo = '';
         if (topic === 'orders/fulfilled') {
           // ORDER SHIPPED / OUT FOR DELIVERY (using out_for_delivery_v2 for dynamic tracking link)
           const fulfillment = (order.fulfillments && order.fulfillments.length > 0) ? order.fulfillments[0] : null;
           const trackingUrl = fulfillment?.tracking_url || (fulfillment?.tracking_urls && fulfillment.tracking_urls[0]) || '';
           
-          let paymentInfo = '';
           if (paymentGateway.includes('cash') || paymentGateway === 'cod' || totalOutstanding >= totalPrice * 0.9) {
             paymentInfo = `₹${totalPrice.toFixed(2)} (COD - Please keep cash/UPI ready)`;
           } else {
@@ -229,7 +231,6 @@ export default async function handler(req, res) {
           }];
         } else {
           // ORDER CONFIRMED (using order_confirmed_v2)
-          let paymentInfo = '';
           if (advanceMatch) {
             const advancePaid = advanceMatch[1];
             const balanceDue = (totalPrice - parseFloat(advancePaid)).toFixed(2);
@@ -280,12 +281,20 @@ export default async function handler(req, res) {
 
           if (waRes.ok) {
             const msgText = `📦 *[Template: ${templateName}]*\nOrder #${order.order_number} • ${paymentInfo}\n${itemsText || 'Shipping/Order Update'}`;
-            await supabase.from('whatsapp_chat_memory').insert([{
-              phone: waPhone,
-              role: 'assistant',
-              content: msgText,
-              created_at: new Date().toISOString()
-            }]).catch(e => console.error('Failed to log template to chat memory:', e));
+            await dbFetch(`/rest/v1/whatsapp_chat_memory`, {
+              method: 'POST',
+              headers: {
+                'apikey': supabaseKey,
+                'Authorization': `Bearer ${supabaseKey}`,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                phone: waPhone,
+                role: 'assistant',
+                content: msgText,
+                created_at: new Date().toISOString()
+              })
+            }).catch(e => console.error('Failed to log template to chat memory:', e));
           }
         }
       }
@@ -299,4 +308,3 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'Failed to process Shopify webhook' });
   }
 }
-

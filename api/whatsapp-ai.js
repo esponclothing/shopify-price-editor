@@ -1022,6 +1022,7 @@ Output ONLY a JSON object containing a "suggestions" array. Example: {"suggestio
     }
     // ---------------------------------------------
 
+    const startTime = Date.now();
     let senderPhone = 'Unknown';
     let userText = '';
     const toolsCalledList = [];
@@ -1042,7 +1043,7 @@ Output ONLY a JSON object containing a "suggestions" array. Example: {"suggestio
 
       // AUTO-CAPTURE WABA_ID: Save WhatsApp Business Account ID to settings whenever a webhook arrives
       const wabaId = entry?.id;
-      if (wabaId && SUPABASE_URL && SUPABASE_KEY) {
+      if (wabaId && SUPABASE_KEY) {
         axios.patch(
           `/rest/v1/whatsapp_settings?id=eq.1`,
           { waba_id: String(wabaId) },
@@ -1117,7 +1118,7 @@ Output ONLY a JSON object containing a "suggestions" array. Example: {"suggestio
 
       senderPhone = message.from;
       const senderName = value?.contacts?.[0]?.profile?.name || '';
-      if (senderPhone && SUPABASE_URL && SUPABASE_KEY) {
+      if (senderPhone && SUPABASE_KEY) {
         const upsertPayload = {
           phone: senderPhone,
           chat_status: 'open',
