@@ -139,8 +139,10 @@ async function createTable() {
           exchange_product_id TEXT,
           status TEXT NOT NULL DEFAULT 'pending'
             CHECK (status IN ('pending','approved','rejected','pickup_scheduled',
-                              'in_transit','received','completed','cancelled')),
+                              'in_transit','received','exchange_shipped','completed','cancelled')),
           admin_note TEXT,
+          photo_url TEXT,
+          photo_expires_at TIMESTAMPTZ,
           return_tracking_number TEXT,
           return_tracking_company TEXT,
           return_tracking_url TEXT,
@@ -151,7 +153,9 @@ async function createTable() {
           rejected_at TIMESTAMPTZ,
           pickup_at TIMESTAMPTZ,
           received_at TIMESTAMPTZ,
+          exchange_shipped_at TIMESTAMPTZ,
           completed_at TIMESTAMPTZ,
+          refund_method TEXT DEFAULT 'store_credit',
           store TEXT DEFAULT 'i2tu0d-jc.myshopify.com',
           merchant_key TEXT
         );

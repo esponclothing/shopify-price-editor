@@ -4112,9 +4112,7 @@ export default function WhatsAppAIDashboard({ preSelectPhone }) {
       )}
       {/* CALLING OVERLAYS */}
       
-      {outboundCall && (
-        
-      )}
+      {/* CALLING OVERLAYS */}
     </div>
   );
 }
