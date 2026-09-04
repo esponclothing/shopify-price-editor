@@ -345,8 +345,15 @@ async function returnsHandler(req, res) {
 
 
 export default async function handler(req, res) {
-  if (req.query.action === 'returns' || req.body?.action === 'returns_init') return returnsHandler(req, res);
-
+  if (
+    req.query.action === 'returns' || 
+    req.body?.action === 'returns_init' || 
+    req.body?.action === 'create' || 
+    req.body?.request_type === 'return' || 
+    req.body?.request_type === 'exchange'
+  ) {
+    return returnsHandler(req, res);
+  }
   res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
