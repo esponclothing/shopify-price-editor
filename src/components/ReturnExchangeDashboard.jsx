@@ -203,7 +203,7 @@ function RequestDetailDrawer({ request, onClose, onRefresh }) {
               <div>
                 <p className="text-slate-900 dark:text-white font-semibold text-sm">{request.product_title}</p>
                 {request.variant_title && <p className="text-slate-600 dark:text-slate-400 text-xs mt-0.5">{request.variant_title}</p>}
-                <p className="text-slate-500 text-xs mt-1">Qty: {request.quantity} · ₹{request.item_price?.toFixed(2) || '—'}</p>
+                <p className="text-slate-500 text-xs mt-1">Qty: {request.quantity} · ₹{request.item_price ? Number(request.item_price).toFixed(2) : '—'}</p>
                 {request.request_type === 'exchange' && request.exchange_size && (
                   <p className="text-indigo-400 text-xs mt-1 font-semibold">Exchange Size: {request.exchange_size}</p>
                 )}
