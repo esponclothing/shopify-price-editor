@@ -1678,7 +1678,7 @@ CRITICAL RULES:
 - descriptionHtml: (string with <p> and <br/>)
 - vendor: (string, choose from existing or suggest)
 - productType: (string)
-- tags: (array of strings, do NOT include article codes)
+- tags: (array of strings. MUST be formatted as "Category: Value" to power frontend filters, e.g., "Fabric: 100% Cotton", "Design: Graphic Print", "GSM: 180", "Brand: 11FIT", "Fit: Regular Fit", "Gender: Men". Do NOT include generic single-word tags, and do NOT include article codes)
 - seoTitle: (string)
 - seoDescription: (string)
 - handle: (string)
