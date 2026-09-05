@@ -1727,10 +1727,10 @@ Do not wrap the JSON in markdown code blocks. Just output raw JSON.`;
 
         let res;
         try {
-          res = await axios.post(`https://generativelanguage.googleapis.com/v1beta/models/${primaryModel}:generateContent?key=${apiKey}`, requestPayload);
+          res = await axios.post(`/api/gemini-proxy`, { model: primaryModel, apiKey, requestPayload });
         } catch (primaryErr) {
           console.warn(`Primary model ${primaryModel} failed. Falling back to ${fallbackModel}...`, primaryErr);
-          res = await axios.post(`https://generativelanguage.googleapis.com/v1beta/models/${fallbackModel}:generateContent?key=${apiKey}`, requestPayload);
+          res = await axios.post(`/api/gemini-proxy`, { model: fallbackModel, apiKey, requestPayload });
         }
         responseText = res.data.candidates[0].content.parts[0].text;
       } else if (aiProvider === 'groq') {
@@ -4253,7 +4253,7 @@ Do not wrap it in markdown block. Return raw JSON.`;
             contents: [{ role: "user", parts: [{ text: systemPrompt }] }],
             generationConfig: { temperature: 0.7, responseMimeType: "application/json" }
           };
-          const res = await axios.post(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, requestPayload);
+          const res = await axios.post(`/api/gemini-proxy`, { model, apiKey, requestPayload });
           responseText = res.data.candidates[0].content.parts[0].text;
         } else if (aiProvider === 'groq') {
           const model = savedSettings.groqModel || 'llama-3.3-70b-versatile';
