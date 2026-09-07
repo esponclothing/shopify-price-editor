@@ -6,6 +6,8 @@ import { dbFetch } from './dbFetch.js';
 // Handles: create, list (customer+admin), update status, add tracking, photo upload
 
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
+const supabaseKey = SUPABASE_KEY || 'railway';
+const supabaseUrl = 'internal';
 const ADMIN_SECRET = process.env.ADMIN_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY;
 const RETURN_WINDOW_DAYS = 7; // 7 days from delivered date
 
@@ -451,7 +453,7 @@ export default async function handler(req, res) {
 
     if (finalOrders.length > 0) {
       // Save/update live fetched orders into Supabase DB asynchronously
-      if (supabaseUrl && supabaseKey) {
+      {
         Promise.all(finalOrders.map(o => {
           const customer_name = o.shipping_address
             ? `${o.shipping_address.first_name || ''} ${o.shipping_address.last_name || ''}`.trim()
@@ -498,7 +500,7 @@ export default async function handler(req, res) {
   }
 
   // STEP 2: FALLBACK TO SUPABASE POSTGRES DATABASE IF SHOPIFY IS UNREACHABLE OR HAS NO MATCH
-  if (supabaseUrl && supabaseKey) {
+  {
     try {
       const dbRes = await dbFetch(`/rest/v1/shopify_orders?or=(phone_last10.eq.${last10},alt_phone_last10.eq.${last10})&order=created_at.desc`,
         {

@@ -2,6 +2,8 @@ import { dbFetch } from './dbFetch.js';
 import crypto from 'crypto';
 
 const OTP_SECRET = process.env.OTP_SECRET || '11fit-secure-otp-secret-key';
+const supabaseUrl = 'internal';
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || 'railway';
 
 export default async function handler(req, res) {
   // CORS Headers

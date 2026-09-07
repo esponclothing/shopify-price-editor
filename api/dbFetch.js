@@ -91,7 +91,18 @@ export async function dbFetch(url, options = {}) {
       const prefer = options.headers?.['Prefer'] || options.headers?.['prefer'];
       let conflictStr = '';
       if (prefer === 'resolution=merge-duplicates') {
-        const pk = keys.includes('id') ? 'id' : (keys.includes('phone') ? 'phone' : (keys.includes('device_id') ? 'device_id' : keys[0]));
+        const TABLE_PK = {
+          network_devices: 'device_id',
+          network_users: 'phone',
+          network_addresses: 'id',
+          checkout_sessions: 'id',
+          otp_logs: 'id',
+          saas_merchants: 'id',
+          return_requests: 'id',
+          shopify_orders: 'id',
+          whatsapp_chat_settings: 'phone'
+        };
+        const pk = TABLE_PK[tableName] || (keys.includes('id') ? 'id' : (keys.includes('phone') ? 'phone' : (keys.includes('device_id') ? 'device_id' : keys[0])));
         const updateSets = keys.map(k => `"${k}" = EXCLUDED."${k}"`).join(', ');
         conflictStr = ` ON CONFLICT ("${pk}") DO UPDATE SET ${updateSets}`;
       }
