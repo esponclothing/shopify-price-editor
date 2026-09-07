@@ -75,18 +75,23 @@ export default async function handler(req, res) {
     // B. FETCH ABANDONED CHECKOUTS FROM SHOPIFY
     // -------------------------------------------------------------
     let checkouts = [];
-    try {
-      const shopifyUrl = `https://${cleanStore}/admin/api/2024-04/checkouts.json?limit=150`;
-      const shopifyRes = await axios.get(shopifyUrl, {
-        headers: {
-          'X-Shopify-Access-Token': clientToken.trim(),
-          'Content-Type': 'application/json'
-        },
-        httpsAgent: new https.Agent({ family: 4, keepAlive: true })
-      });
-      checkouts = shopifyRes.data?.checkouts || [];
-    } catch (err) {
-      console.warn('Error fetching Shopify checkouts:', err.message);
+    if (cleanStore && clientToken && clientToken.trim().startsWith('shpat_')) {
+      try {
+        const shopifyUrl = `https://${cleanStore}/admin/api/2024-04/checkouts.json?limit=150`;
+        const shopifyRes = await axios.get(shopifyUrl, {
+          headers: {
+            'X-Shopify-Access-Token': clientToken.trim(),
+            'Content-Type': 'application/json'
+          },
+          httpsAgent: new https.Agent({ family: 4, keepAlive: true }),
+          validateStatus: status => status < 500
+        });
+        if (shopifyRes.status === 200) {
+          checkouts = shopifyRes.data?.checkouts || [];
+        }
+      } catch (err) {
+        // Network or connection error - silent fallback
+      }
     }
 
     // -------------------------------------------------------------
