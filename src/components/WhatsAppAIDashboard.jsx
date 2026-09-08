@@ -607,7 +607,7 @@ export default function WhatsAppAIDashboard({ preSelectPhone }) {
       const cleanDigits = phone.replace(/\D/g, '');
       const last10 = cleanDigits.slice(-10);
 
-      const res = await fetch(`/api/shopify-customer-orders?phone=${encodeURIComponent(last10)}`);
+      const res = await fetch(`/api/shopify-customer-orders?phone=${encodeURIComponent(last10)}&store=i2tu0d-jc.myshopify.com`);
       if (res.ok) {
         const data = await res.json();
         let ordersList = data.orders || [];
@@ -744,7 +744,7 @@ export default function WhatsAppAIDashboard({ preSelectPhone }) {
     if (selectedChat?.phone) {
       const cleanDigits = selectedChat.phone.replace(/\D/g, '');
       const last10 = cleanDigits.slice(-10);
-      fetch(`/api/shopify-customer-orders?phone=${encodeURIComponent(last10)}`)
+      fetch(`/api/shopify-customer-orders?phone=${encodeURIComponent(last10)}&store=i2tu0d-jc.myshopify.com`)
         .then(res => res.json())
         .then(data => {
           let ordersList = data.orders || [];
@@ -3331,6 +3331,9 @@ export default function WhatsAppAIDashboard({ preSelectPhone }) {
                     </h3>
                     <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
                       {customerOrders.length}
+                    </span>
+                    <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
+                      11FIT Store
                     </span>
                   </div>
                   <p className="text-xs text-slate-400 truncate">

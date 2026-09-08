@@ -46,7 +46,7 @@ export default async function handler(req, res) {
       let ordersInfoMap = {};
       try {
         const ordRes = await axios.get(
-          `/rest/v1/shopify_orders?select=phone_last10,alt_phone_last10,fulfillment_status,cancelled_at,order_data&phone_last10=not.is.null&order=created_at.desc&limit=500`,
+          `/rest/v1/shopify_orders?store_domain=eq.i2tu0d-jc.myshopify.com&select=phone_last10,alt_phone_last10,fulfillment_status,cancelled_at,order_data&phone_last10=not.is.null&order=created_at.desc&limit=500`,
           { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } }
         );
         (ordRes.data || []).forEach(o => {

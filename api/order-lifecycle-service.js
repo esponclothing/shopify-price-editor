@@ -93,8 +93,17 @@ async function sendWhatsAppTemplate({ toPhone, templateName, components, waToken
  * Main lifecycle processor for any Shopify order
  * Handles: order_placed, order_shipped, out_for_delivery, order_delivered
  */
-export async function processOrderLifecycle(order, triggerSource = 'webhook') {
+export async function processOrderLifecycle(order, triggerSource = 'webhook', incomingStoreDomain = '') {
   if (!order || !order.id) return { success: false, message: 'Invalid order' };
+
+  // Resolve store domain
+  let storeDomain = incomingStoreDomain || order.shop_domain || '';
+  if (!storeDomain) {
+    const url = order.order_status_url || '';
+    if (url.includes('espon')) storeDomain = 'esponsports.myshopify.com';
+    else if (url.includes('11fit') || url.includes('104305262673')) storeDomain = 'i2tu0d-jc.myshopify.com';
+    else storeDomain = 'i2tu0d-jc.myshopify.com';
+  }
 
   // 1. Extract phone numbers for indexing & WhatsApp
   const rawPhones = [
@@ -179,15 +188,15 @@ export async function processOrderLifecycle(order, triggerSource = 'webhook') {
     console.warn('[Order Lifecycle] Could not read existing notifications_sent:', err.message);
   }
 
-  // 3. Upsert order into shopify_orders
+  // 3. Upsert order into shopify_orders with store_domain
   try {
     await poolEditor.query(`
       INSERT INTO shopify_orders (
         id, order_number, name, phone_last10, alt_phone_last10, customer_name,
         total_price, fulfillment_status, cancelled_at, tracking_number,
-        tracking_company, tracking_url, order_data, notifications_sent,
+        tracking_company, tracking_url, order_data, notifications_sent, store_domain,
         created_at, updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NOW())
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, NOW())
       ON CONFLICT (id) DO UPDATE SET
         fulfillment_status = EXCLUDED.fulfillment_status,
         cancelled_at = EXCLUDED.cancelled_at,
@@ -196,6 +205,7 @@ export async function processOrderLifecycle(order, triggerSource = 'webhook') {
         tracking_url = COALESCE(EXCLUDED.tracking_url, shopify_orders.tracking_url),
         order_data = EXCLUDED.order_data,
         notifications_sent = COALESCE(shopify_orders.notifications_sent, '{}'::jsonb) || EXCLUDED.notifications_sent,
+        store_domain = COALESCE(EXCLUDED.store_domain, shopify_orders.store_domain),
         updated_at = NOW()
     `, [
       order.id,
@@ -212,6 +222,7 @@ export async function processOrderLifecycle(order, triggerSource = 'webhook') {
       tracking_url,
       JSON.stringify(order),
       JSON.stringify(notifications_sent),
+      storeDomain,
       order.created_at || new Date().toISOString()
     ]);
   } catch (dbErr) {
@@ -238,7 +249,7 @@ export async function processOrderLifecycle(order, triggerSource = 'webhook') {
           updated_at = NOW()
       `, [`+${waPhone}`, firstName, lastName, address1, address2, city, province, zip, country]);
     } catch (uErr) {
-      console.error('[Order Lifecycle] Error upserting network_users:', uErr.message);
+      console.warn('[Order Lifecycle] Could not upsert network_users:', uErr.message);
     }
   }
 
@@ -273,9 +284,30 @@ export async function processOrderLifecycle(order, triggerSource = 'webhook') {
   // 6. Check workflow settings and credentials (cached for 60s)
   const settings = await getCachedSettings();
 
-  const waToken = settings.whatsapp_token;
-  const phoneId = process.env.WHATSAPP_PHONE_NUMBER_ID || '1189183190949431';
-  const workflows = settings.workflows || {};
+  let waToken = settings.whatsapp_token;
+  let phoneId = process.env.WHATSAPP_PHONE_NUMBER_ID || '1189183190949431';
+  let workflows = settings.workflows || {};
+
+  // Strict store isolation: only send from 11FIT bot if order belongs to 11FIT!
+  if (storeDomain !== 'i2tu0d-jc.myshopify.com') {
+    try {
+      const mRes = await poolEditor.query(
+        `SELECT payment_settings FROM saas_merchants WHERE shopify_store_url = $1 AND is_active = true LIMIT 1`,
+        [storeDomain]
+      );
+      const ps = mRes.rows[0]?.payment_settings || {};
+      if (ps.wa_phone_number_id && ps.wa_access_token) {
+        phoneId = ps.wa_phone_number_id;
+        waToken = ps.wa_access_token;
+      } else {
+        console.log(`[Order Lifecycle] Skipping WhatsApp dispatch: Order belongs to ${storeDomain}, not 11FIT, and no dedicated WhatsApp credentials found.`);
+        return { success: true, message: `Order #${order.order_number} saved for ${storeDomain}, WhatsApp dispatch skipped (isolated from 11FIT bot)` };
+      }
+    } catch (mErr) {
+      console.warn('[Order Lifecycle] Error looking up merchant credentials for foreign store:', mErr.message);
+      return { success: true, message: `Order #${order.order_number} saved, WhatsApp dispatch skipped` };
+    }
+  }
 
   if (!waToken || !waPhone) {
     return { success: true, message: 'Processed DB sync without WhatsApp dispatch (no token or phone)' };

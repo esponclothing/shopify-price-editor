@@ -7,6 +7,7 @@ export default async function handler(req, res) {
 
   let order = req.body;
   const topic = req.headers['x-shopify-topic'] || 'orders/create';
+  const shopDomain = req.headers['x-shopify-shop-domain'] || '';
 
   if (!order || (!order.id && !order.order_id)) {
     return res.status(200).json({ message: 'No valid order payload found, ignoring' });
@@ -37,8 +38,8 @@ export default async function handler(req, res) {
       }
     }
 
-    const result = await processOrderLifecycle(order, topic);
-    return res.status(200).json({ success: true, topic, result });
+    const result = await processOrderLifecycle(order, topic, shopDomain);
+    return res.status(200).json({ success: true, topic, shopDomain, result });
   } catch (err) {
     console.error('[Shopify Webhook] Error processing event:', err);
     return res.status(500).json({ error: 'Failed to process webhook', message: err.message });

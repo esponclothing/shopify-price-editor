@@ -510,9 +510,9 @@ async function lookupOrder(orderNumber, senderPhone = '', userText = '', history
       try {
         let queryUrl = '';
         if (pureNum) {
-          queryUrl = `/rest/v1/shopify_orders?or=(name.eq.%23${pureNum},order_number.eq.${pureNum})&limit=1`;
+          queryUrl = `/rest/v1/shopify_orders?store_domain=eq.i2tu0d-jc.myshopify.com&or=(name.eq.%23${pureNum},order_number.eq.${pureNum})&limit=1`;
         } else if (cleanSender && cleanSender.length === 10) {
-          queryUrl = `/rest/v1/shopify_orders?or=(phone_last10.eq.${cleanSender},alt_phone_last10.eq.${cleanSender})&order=created_at.desc&limit=1`;
+          queryUrl = `/rest/v1/shopify_orders?store_domain=eq.i2tu0d-jc.myshopify.com&or=(phone_last10.eq.${cleanSender},alt_phone_last10.eq.${cleanSender})&order=created_at.desc&limit=1`;
         }
 
         if (queryUrl) {

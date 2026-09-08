@@ -104,7 +104,7 @@ function WhatsAppChatModal({ phone, customerName, onClose }) {
   const fetchOrders = async () => {
     try {
       const digits = phone.replace(/\D/g, '').slice(-10);
-      const res = await fetch(`/api/shopify-customer-orders?phone=${encodeURIComponent(digits)}`);
+      const res = await fetch(`/api/shopify-customer-orders?phone=${encodeURIComponent(digits)}&store=i2tu0d-jc.myshopify.com`);
       if (res.ok) {
         const data = await res.json();
         setCustomerOrders((data.orders || []).sort((a, b) => new Date(b.created_at) - new Date(a.created_at)));
@@ -534,7 +534,7 @@ export default function CustomerOrderLookup() {
     setShowWAModal(false);
 
     try {
-      const ordersRes = await fetch(`/api/shopify-customer-orders?phone=${encodeURIComponent(cleanQuery)}`);
+      const ordersRes = await fetch(`/api/shopify-customer-orders?query=${encodeURIComponent(cleanQuery)}&store=i2tu0d-jc.myshopify.com`);
       if (ordersRes.ok) {
         const data = await ordersRes.json();
         const loadedOrders = data.orders || [];

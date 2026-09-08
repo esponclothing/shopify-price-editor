@@ -1,5 +1,5 @@
 import axios from './dbWrapper.js';
-import { dbFetch } from './dbFetch.js';
+import { dbFetch, pool } from './dbFetch.js';
 
 // api/returns.js
 // Return & Exchange Request API for 11fit
@@ -392,44 +392,46 @@ export default async function handler(req, res) {
     }
   }
 
-  const phone = req.query.phone;
-  if (!phone) {
-    return res.status(400).json({ error: 'Phone number required' });
+  const rawQuery = req.query.phone || req.query.order || req.query.order_number || req.query.query || '';
+  if (!rawQuery) {
+    return res.status(400).json({ error: 'Phone number or order number required' });
   }
 
-  const cleanDigits = phone.toString().replace(/\D/g, '');
+  const rawClean = rawQuery.toString().trim();
+  const cleanDigits = rawClean.replace(/\D/g, '');
+  const isOrderNumberQuery = (rawClean.startsWith('#') || (cleanDigits.length <= 6 && cleanDigits.length > 0 && !rawClean.startsWith('+')));
   const last10 = cleanDigits.slice(-10);
 
-  if (!last10 || last10.length < 10) {
+  if (!isOrderNumberQuery && (!last10 || last10.length < 10)) {
     return res.status(200).json({ orders: [] });
   }
 
-    
-  const clientStore = req.headers['x-client-store-url'] || process.env.VITE_SHOPIFY_STORE_URL || 'i2tu0d-jc.myshopify.com';
-  const clientToken = req.headers['x-client-access-token'] || process.env.VITE_SHOPIFY_ACCESS_TOKEN || process.env.SHOPIFY_ACCESS_TOKEN || '';
+  const clientStore = req.query.store || req.headers['x-client-store-url'] || process.env.VITE_SHOPIFY_STORE_URL || 'i2tu0d-jc.myshopify.com';
+  let cleanStore = clientStore.trim().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+  if (cleanStore.includes('11fit')) cleanStore = 'i2tu0d-jc.myshopify.com';
+  if (cleanStore.includes('espon')) cleanStore = 'esponsports.myshopify.com';
 
-  let cleanStore = clientStore.trim();
-  if (cleanStore.startsWith('https://')) cleanStore = cleanStore.replace('https://', '');
-  if (cleanStore.startsWith('http://')) cleanStore = cleanStore.replace('http://', '');
+  let clientToken = req.headers['x-client-access-token'] || process.env.VITE_SHOPIFY_ACCESS_TOKEN || process.env.SHOPIFY_ACCESS_TOKEN || '';
+  if (!clientToken) {
+    try {
+      const mRes = await pool.query(
+        `SELECT shopify_access_token FROM saas_merchants WHERE shopify_store_url = $1 AND is_active = true LIMIT 1`,
+        [cleanStore]
+      );
+      if (mRes.rows[0]?.shopify_access_token) {
+        clientToken = mRes.rows[0].shopify_access_token;
+      }
+    } catch (_) {}
+  }
 
   // STEP 1: ALWAYS TRY LIVE SHOPIFY API FIRST (~700ms) FOR 100% FRESH TRACKING & STATUS
   try {
-    const custRes = await axios.get(
-      `https://${cleanStore}/admin/api/2024-04/customers/search.json?query=${encodeURIComponent(last10)}`,
-      {
-        headers: {
-          'X-Shopify-Access-Token': clientToken.trim(),
-          'Content-Type': 'application/json'
-        },
-        timeout: 4500
-      }
-    ).catch(() => ({ data: { customers: [] } }));
+    let fetchedOrders = [];
 
-    const customers = custRes.data?.customers || [];
-
-    const orderPromises = customers.map(c =>
-      axios.get(
-        `https://${cleanStore}/admin/api/2024-04/customers/${c.id}/orders.json?status=any`,
+    if (isOrderNumberQuery && clientToken) {
+      const orderNumOnly = parseInt(cleanDigits, 10);
+      const liveOrderRes = await axios.get(
+        `https://${cleanStore}/admin/api/2024-04/orders.json?name=${encodeURIComponent('#' + orderNumOnly)}&status=any`,
         {
           headers: {
             'X-Shopify-Access-Token': clientToken.trim(),
@@ -437,104 +439,169 @@ export default async function handler(req, res) {
           },
           timeout: 4500
         }
-      ).catch(() => ({ data: { orders: [] } }))
-    );
+      ).catch(() => ({ data: { orders: [] } }));
+      fetchedOrders = liveOrderRes.data?.orders || [];
+    } else if (last10 && clientToken) {
+      const custRes = await axios.get(
+        `https://${cleanStore}/admin/api/2024-04/customers/search.json?query=${encodeURIComponent(last10)}`,
+        {
+          headers: {
+            'X-Shopify-Access-Token': clientToken.trim(),
+            'Content-Type': 'application/json'
+          },
+          timeout: 4500
+        }
+      ).catch(() => ({ data: { customers: [] } }));
 
-    const results = await Promise.all(orderPromises);
-    const orderMap = new Map();
-    results.forEach(resObj => {
-      (resObj.data?.orders || []).forEach(o => {
-        orderMap.set(o.id, o);
-      });
-    });
+      const customers = custRes.data?.customers || [];
 
-    const finalOrders = Array.from(orderMap.values());
-    finalOrders.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-
-    if (finalOrders.length > 0) {
-      // Save/update live fetched orders into Supabase DB asynchronously
-      {
-        Promise.all(finalOrders.map(o => {
-          const customer_name = o.shipping_address
-            ? `${o.shipping_address.first_name || ''} ${o.shipping_address.last_name || ''}`.trim()
-            : (o.customer ? `${o.customer.first_name || ''} ${o.customer.last_name || ''}`.trim() : null);
-
-          const fulfillment = (o.fulfillments && o.fulfillments.length > 0) ? o.fulfillments[0] : null;
-          const tracking_number = fulfillment?.tracking_number || null;
-          const tracking_company = fulfillment?.tracking_company || null;
-          const tracking_url = fulfillment?.tracking_url || (fulfillment?.tracking_urls && fulfillment.tracking_urls[0]) || null;
-
-          return dbFetch(`/rest/v1/shopify_orders`, {
-            method: 'POST',
+      const orderPromises = customers.map(c =>
+        axios.get(
+          `https://${cleanStore}/admin/api/2024-04/customers/${c.id}/orders.json?status=any`,
+          {
             headers: {
-              'apikey': supabaseKey,
-              'Authorization': `Bearer ${supabaseKey}`,
-              'Content-Type': 'application/json',
-              'Prefer': 'resolution=merge-duplicates'
+              'X-Shopify-Access-Token': clientToken.trim(),
+              'Content-Type': 'application/json'
             },
-            body: JSON.stringify({
-              id: o.id,
-              order_number: o.order_number,
-              name: o.name || `#${o.order_number}`,
-              phone_last10: last10,
-              alt_phone_last10: null,
-              customer_name,
-              total_price: o.total_price || 0,
-              fulfillment_status: o.fulfillment_status || null,
-              cancelled_at: o.cancelled_at || null,
-              tracking_number,
-              tracking_company,
-              tracking_url,
-              order_data: o,
-              created_at: o.created_at || new Date().toISOString(),
-              updated_at: new Date().toISOString()
-            })
-          }).catch(() => {});
-        })).catch(() => {});
-      }
+            timeout: 4500
+          }
+        ).catch(() => ({ data: { orders: [] } }))
+      );
 
-      return res.status(200).json({ orders: finalOrders, source: 'shopify_live' });
+      const results = await Promise.all(orderPromises);
+      const orderMap = new Map();
+      results.forEach(resObj => {
+        (resObj.data?.orders || []).forEach(o => {
+          orderMap.set(o.id, o);
+        });
+      });
+      fetchedOrders = Array.from(orderMap.values());
+    }
+
+    fetchedOrders.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+    if (fetchedOrders.length > 0) {
+      // Save/update live fetched orders into PostgreSQL DB with store_domain
+      Promise.all(fetchedOrders.map(o => {
+        const customer_name = o.shipping_address
+          ? `${o.shipping_address.first_name || ''} ${o.shipping_address.last_name || ''}`.trim()
+          : (o.customer ? `${o.customer.first_name || ''} ${o.customer.last_name || ''}`.trim() : null);
+
+        const fulfillment = (o.fulfillments && o.fulfillments.length > 0) ? o.fulfillments[0] : null;
+        const tracking_number = fulfillment?.tracking_number || null;
+        const tracking_company = fulfillment?.tracking_company || null;
+        const tracking_url = fulfillment?.tracking_url || (fulfillment?.tracking_urls && fulfillment.tracking_urls[0]) || null;
+
+        const oPhones = [o.phone, o.customer?.phone, o.shipping_address?.phone, o.billing_address?.phone].filter(Boolean);
+        const oLast10 = oPhones.map(p => String(p).replace(/\D/g, '').slice(-10)).find(p => p.length === 10) || last10;
+
+        return pool.query(`
+          INSERT INTO shopify_orders (
+            id, order_number, name, phone_last10, alt_phone_last10, customer_name,
+            total_price, fulfillment_status, cancelled_at, tracking_number,
+            tracking_company, tracking_url, order_data, store_domain,
+            created_at, updated_at
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NOW())
+          ON CONFLICT (id) DO UPDATE SET
+            fulfillment_status = EXCLUDED.fulfillment_status,
+            cancelled_at = EXCLUDED.cancelled_at,
+            tracking_number = COALESCE(EXCLUDED.tracking_number, shopify_orders.tracking_number),
+            tracking_company = COALESCE(EXCLUDED.tracking_company, shopify_orders.tracking_company),
+            tracking_url = COALESCE(EXCLUDED.tracking_url, shopify_orders.tracking_url),
+            order_data = EXCLUDED.order_data,
+            store_domain = COALESCE(EXCLUDED.store_domain, shopify_orders.store_domain),
+            updated_at = NOW()
+        `, [
+          o.id,
+          o.order_number,
+          o.name || `#${o.order_number}`,
+          oLast10,
+          null,
+          customer_name,
+          o.total_price || 0,
+          o.fulfillment_status || null,
+          o.cancelled_at || null,
+          tracking_number,
+          tracking_company,
+          tracking_url,
+          JSON.stringify(o),
+          cleanStore,
+          o.created_at || new Date().toISOString()
+        ]).catch(() => {});
+      })).catch(() => {});
+
+      const decoratedOrders = fetchedOrders.map(o => ({
+        ...o,
+        store_domain: cleanStore,
+        store_name: cleanStore.includes('espon') ? 'Esponsports' : '11FIT'
+      }));
+
+      return res.status(200).json({ orders: decoratedOrders, source: 'shopify_live' });
     }
   } catch (err) {
     console.error('Live Shopify fetch error, falling back to database:', err.message);
   }
 
-  // STEP 2: FALLBACK TO SUPABASE POSTGRES DATABASE IF SHOPIFY IS UNREACHABLE OR HAS NO MATCH
-  {
-    try {
-      const dbRes = await dbFetch(`/rest/v1/shopify_orders?or=(phone_last10.eq.${last10},alt_phone_last10.eq.${last10})&order=created_at.desc`,
-        {
-          headers: {
-            'apikey': supabaseKey,
-            'Authorization': `Bearer ${supabaseKey}`,
-            'Content-Type': 'application/json'
-          }
-        }
-      );
-      if (dbRes.ok) {
-        const rows = await dbRes.json();
-        if (rows && rows.length > 0) {
-          const orders = rows.map(r => {
-            let data = r.order_data;
-            if (typeof data === 'string') {
-              try { data = JSON.parse(data); } catch (_) {}
-            }
-            if (data && typeof data === 'object') {
-              data.id = data.id || r.id;
-              data.created_at = data.created_at || r.created_at;
-              data.name = data.name || r.name || (r.order_number ? `#${r.order_number}` : '#Order');
-              data.order_number = data.order_number || r.order_number;
-              data.total_price = data.total_price || r.total_price || 0;
-              return data;
-            }
-            return r;
-          });
-          return res.status(200).json({ orders, source: 'database_fallback' });
-        }
-      }
-    } catch (err) {
-      console.error('Error reading shopify_orders from DB:', err);
+  // STEP 2: FALLBACK TO POSTGRES DATABASE (STRICTLY FILTERED BY STORE_DOMAIN)
+  try {
+    let querySql = '';
+    let queryParams = [];
+
+    if (isOrderNumberQuery) {
+      const orderNumOnly = parseInt(cleanDigits, 10);
+      querySql = `
+        SELECT * FROM shopify_orders 
+        WHERE (order_number = $1 OR name = $2)
+          AND (store_domain = $3 OR ($3 = 'i2tu0d-jc.myshopify.com' AND (store_domain IS NULL OR store_domain LIKE '%11fit%')))
+        ORDER BY created_at DESC
+      `;
+      queryParams = [orderNumOnly, `#${orderNumOnly}`, cleanStore];
+    } else {
+      querySql = `
+        SELECT * FROM shopify_orders 
+        WHERE (phone_last10 = $1 OR alt_phone_last10 = $1)
+          AND (store_domain = $2 OR ($2 = 'i2tu0d-jc.myshopify.com' AND (store_domain IS NULL OR store_domain LIKE '%11fit%')))
+        ORDER BY created_at DESC
+      `;
+      queryParams = [last10, cleanStore];
     }
+
+    const dbRes = await pool.query(querySql, queryParams);
+    if (dbRes.rows && dbRes.rows.length > 0) {
+      const orders = dbRes.rows.map(r => {
+        let data = r.order_data;
+        if (typeof data === 'string') {
+          try { data = JSON.parse(data); } catch (_) {}
+        }
+        if (data && typeof data === 'object') {
+          data.id = data.id || r.id;
+          data.created_at = data.created_at || r.created_at;
+          data.name = data.name || r.name || (r.order_number ? `#${r.order_number}` : '#Order');
+          data.order_number = data.order_number || r.order_number;
+          data.total_price = data.total_price || r.total_price || 0;
+          data.store_domain = r.store_domain || cleanStore;
+          data.store_name = (r.store_domain || cleanStore).includes('espon') ? 'Esponsports' : '11FIT';
+          return data;
+        }
+        return {
+          ...r,
+          store_domain: r.store_domain || cleanStore,
+          store_name: (r.store_domain || cleanStore).includes('espon') ? 'Esponsports' : '11FIT'
+        };
+      });
+
+      // Extra in-memory safety check against cross-store contamination
+      const strictlyIsolatedOrders = orders.filter(o => {
+        const orderUrl = (o.order_status_url || o.order_data?.order_status_url || '').toLowerCase();
+        if (cleanStore.includes('11fit') && orderUrl.includes('espon')) return false;
+        if (cleanStore.includes('espon') && orderUrl.includes('11fit')) return false;
+        return true;
+      });
+
+      return res.status(200).json({ orders: strictlyIsolatedOrders, source: 'database_fallback' });
+    }
+  } catch (err) {
+    console.error('Error reading shopify_orders from DB:', err);
   }
 
   return res.status(200).json({ orders: [], source: 'empty' });
