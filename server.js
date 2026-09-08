@@ -62,6 +62,7 @@ app.use((req, res, next) => {
 });
 
 import { startAbandonedCartWorker } from './api/abandoned-cart-worker.js';
+import { startOrderLifecycleWorker } from './api/order-lifecycle-worker.js';
 
 const port = process.env.PORT || 3000;
 app.listen(port, () => {
@@ -71,5 +72,11 @@ app.listen(port, () => {
   } catch (workerErr) {
     console.error('Failed to start Abandoned Cart Worker:', workerErr);
   }
+  try {
+    startOrderLifecycleWorker();
+  } catch (workerErr) {
+    console.error('Failed to start Order Lifecycle Worker:', workerErr);
+  }
 });
+
 
