@@ -61,7 +61,15 @@ app.use((req, res, next) => {
   }
 });
 
+import { startAbandonedCartWorker } from './api/abandoned-cart-worker.js';
+
 const port = process.env.PORT || 3000;
 app.listen(port, () => {
   console.log(`Server listening on port ${port}`);
+  try {
+    startAbandonedCartWorker();
+  } catch (workerErr) {
+    console.error('Failed to start Abandoned Cart Worker:', workerErr);
+  }
 });
+
