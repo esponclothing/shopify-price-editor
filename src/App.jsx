@@ -69,7 +69,7 @@ export default function App() {
   const [editingProduct, setEditingProduct] = useState(null);
 
   // Define main collections (parent collections) to avoid hyphen matching bugs
-  const mainHandles = ['t-shirts', 'trackpants', 'swimwear', 'shorts', 'joggers', 'accessories', 'frontpage', 'avada-best-sellers', 'cockroach-special'];
+  const mainHandles = ['girls-trending-tops', 't-shirts', 'trackpants', 'swimwear', 'shorts', 'joggers', 'accessories', 'frontpage', 'avada-best-sellers', 'cockroach-special'];
 
   useEffect(() => {
     if (isConfigured) {
