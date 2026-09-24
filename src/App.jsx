@@ -15,7 +15,7 @@ import {
   Send, CheckSquare, Square, Sparkles, Upload, Wand2, Plus,
   Layers, Trash2, LayoutDashboard, ChevronRight, Eye, ChevronDown, ChevronUp,
   Truck, Clock, ArrowLeftRight, PackageCheck, Percent, RefreshCw, Zap, Menu,
-  Workflow, Activity
+  Workflow, Activity, Bell, BellRing
 } from 'lucide-react';
 
 // Axios request interceptor to dynamically inject target credentials
@@ -43,6 +43,93 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [whatsappPreSelectPhone, setWhatsappPreSelectPhone] = useState(null);
+  const [pushEnabled, setPushEnabled] = useState(false);
+  const [pushTesting, setPushTesting] = useState(false);
+
+  const urlBase64ToUint8Array = (base64String) => {
+    const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+    const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+    const rawData = window.atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+    for (let i = 0; i < rawData.length; ++i) {
+      outputArray[i] = rawData.charCodeAt(i);
+    }
+    return outputArray;
+  };
+
+  const playChime = () => {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(587.33, ctx.currentTime);
+      osc.frequency.setValueAtTime(880, ctx.currentTime + 0.15);
+      gain.gain.setValueAtTime(0.3, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.45);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.5);
+    } catch (_) {}
+  };
+
+  const enablePushNotifications = async () => {
+    playChime();
+    if (typeof navigator !== 'undefined' && navigator.vibrate) {
+      try { navigator.vibrate([100, 50, 100]); } catch (_) {}
+    }
+
+    if (!('Notification' in window)) {
+      alert('Browser does not support notifications, but audible alerts are active!');
+      setPushEnabled(true);
+      return;
+    }
+
+    try {
+      const perm = await Notification.requestPermission();
+      if (perm === 'granted') {
+        setPushEnabled(true);
+        if ('serviceWorker' in navigator) {
+          const reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+          await navigator.serviceWorker.ready;
+          
+          let sub = await reg.pushManager.getSubscription();
+          if (!sub) {
+            const vapidPublicKey = 'BIqLUY30-N9qSJrCz4tF1C65XgCRVyr-1TmiCTG2MNFL2_8_EAC4o626ehSdKSM5uUpNPJvpcNCjwOen8evAjRU';
+            sub = await reg.pushManager.subscribe({
+              userVisibleOnly: true,
+              applicationServerKey: urlBase64ToUint8Array(vapidPublicKey)
+            });
+          }
+
+          await fetch('/api/11fit-analytics?action=webpush', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'subscribe', subscription: sub })
+          });
+
+          reg.active?.postMessage({ type: 'TEST_NOTIFICATION' });
+          alert('🔔 Notifications enabled! You will receive alerts on this device for WhatsApp messages and new orders.');
+        }
+      } else {
+        alert('Notification permission not granted. Audible sound alerts will still play when app is open.');
+      }
+    } catch (err) {
+      console.error('Failed to enable push notifications:', err);
+      alert('Error registering notifications: ' + err.message);
+    }
+  };
+
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+      setPushEnabled(true);
+    }
+    // Auto register service worker on load
+    if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => {});
+    }
+  }, []);
 
   const [products, setProducts] = useState([]);
   const [locations, setLocations] = useState([]);
@@ -638,6 +725,29 @@ export default function App() {
               </h2>
             )}
           </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={enablePushNotifications}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all border shadow-sm ${
+                pushEnabled
+                  ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20'
+                  : 'bg-amber-500/10 text-amber-400 border-amber-500/30 hover:bg-amber-500/20 animate-pulse'
+              }`}
+              title={pushEnabled ? "Notifications Active (Click to test)" : "Enable Push Notifications"}
+            >
+              {pushEnabled ? <BellRing className="w-4 h-4 text-emerald-400" /> : <Bell className="w-4 h-4 text-amber-400" />}
+              <span className="hidden sm:inline">{pushEnabled ? 'Alerts ON' : 'Enable Alerts'}</span>
+            </button>
+
+            <button
+              onClick={() => setShowSettings(true)}
+              className="p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white border border-slate-700 hover:bg-slate-700 transition-colors shadow-sm"
+              title="Store Settings"
+            >
+              <Settings className="w-4 h-4" />
+            </button>
+          </div>
         </header>
 
         {/* Mobile Horizontal Filter Bar for Products Page */}
@@ -666,7 +776,7 @@ export default function App() {
           </div>
         )}
 
-        <main className={`flex-1 w-full mx-auto font-sans ${activeTab === 'whatsapp-ai' ? 'p-0 max-w-none overflow-hidden flex flex-col' : 'p-4 md:p-8 overflow-y-auto max-w-7xl'}`}>
+        <main className={`flex-1 w-full mx-auto font-sans ${activeTab === 'whatsapp-ai' ? 'p-0 pb-16 md:pb-0 max-w-none overflow-hidden flex flex-col' : 'p-4 pb-24 md:p-8 md:pb-8 overflow-y-auto max-w-7xl'}`}>
           {error && (
             <div className="mb-6 p-4 bg-red-950/40 border border-red-800/60 rounded-2xl flex items-center gap-3 text-red-400 shadow-md">
               <AlertCircle className="w-5 h-5 shrink-0" />
@@ -802,6 +912,57 @@ export default function App() {
             <DeliveryPipelineDashboard />
           )}
         </main>
+
+        {/* MOBILE BOTTOM NAVIGATION BAR (iOS / Android App Style) */}
+        <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#0F172A]/95 backdrop-blur-xl border-t border-slate-800/90 flex items-center justify-around py-2 px-1 shadow-[0_-8px_25px_rgba(0,0,0,0.5)]">
+          <button
+            onClick={() => setActiveTab('whatsapp-ai')}
+            className={`flex flex-col items-center justify-center py-1 px-3 rounded-xl transition-all ${
+              activeTab === 'whatsapp-ai' ? 'text-emerald-400 font-bold scale-105' : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Zap className="w-5 h-5 mb-0.5" />
+            <span className="text-[10px] tracking-tight">AI Inbox</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('analytics')}
+            className={`flex flex-col items-center justify-center py-1 px-3 rounded-xl transition-all ${
+              activeTab === 'analytics' ? 'text-emerald-400 font-bold scale-105' : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Activity className="w-5 h-5 mb-0.5" />
+            <span className="text-[10px] tracking-tight">Analytics</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('products')}
+            className={`flex flex-col items-center justify-center py-1 px-3 rounded-xl transition-all ${
+              activeTab === 'products' ? 'text-yellow-500 font-bold scale-105' : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Package className="w-5 h-5 mb-0.5" />
+            <span className="text-[10px] tracking-tight">Products</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('customer-lookup')}
+            className={`flex flex-col items-center justify-center py-1 px-3 rounded-xl transition-all ${
+              activeTab === 'customer-lookup' ? 'text-emerald-400 font-bold scale-105' : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Phone className="w-5 h-5 mb-0.5" />
+            <span className="text-[10px] tracking-tight">Lookup</span>
+          </button>
+
+          <button
+            onClick={() => setMobileMenuOpen(true)}
+            className="flex flex-col items-center justify-center py-1 px-3 rounded-xl text-slate-400 hover:text-white transition-all"
+          >
+            <Menu className="w-5 h-5 mb-0.5" />
+            <span className="text-[10px] tracking-tight">Menu</span>
+          </button>
+        </nav>
       </div>
 
       {editingProduct && (

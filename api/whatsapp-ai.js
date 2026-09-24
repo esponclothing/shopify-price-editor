@@ -101,43 +101,16 @@ try {
   }).catch(() => {});
 } catch (_) {}
 
+import { broadcastPushNotification } from './push-service.js';
+
 async function sendPushNotificationToAll(title, body, data = { url: '/' }) {
-  if (!global.webpush) return;
   try {
-    const subRes = await axios.get(
-      `/rest/v1/push_subscriptions?select=subscription`,
-      { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } }
-    );
-    const subs = subRes.data || [];
-    if (subs.length === 0) return;
-
-    const vibrate = data.vibrate;
-    if (vibrate) delete data.vibrate;
-
-    const payload = JSON.stringify({
+    await broadcastPushNotification({
       title: title || '💬 11FIT: New WhatsApp Message',
       body: body || 'A customer sent you a message',
-      icon: '/favicon.svg',
-      badge: '/favicon.svg',
       tag: 'wa-new-msg',
-      vibrate,
       data
     });
-
-    await Promise.allSettled(
-      subs.map(async ({ subscription }) => {
-        try {
-          await global.webpush.sendNotification(subscription, payload);
-        } catch (err) {
-          if (err.statusCode === 410 || err.statusCode === 404) {
-            await axios.delete(
-              `/rest/v1/push_subscriptions?endpoint=eq.${encodeURIComponent(subscription.endpoint)}`,
-              { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } }
-            ).catch(() => {});
-          }
-        }
-      })
-    );
   } catch (err) {
     console.error('Failed to broadcast Web Push notification:', err.message);
   }

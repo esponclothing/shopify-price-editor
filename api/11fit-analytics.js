@@ -57,6 +57,48 @@ export default async function handler(req, res) {
     return res.status(200).end();
   }
 
+  // Handle Web Push Subscriptions & Test Triggers (PC & Mobile)
+  const action = req.query?.action || (req.url && new URL(req.url, 'http://localhost').searchParams.get('action'));
+  if (action === 'webpush') {
+    const { action: subAction, subscription, title, body } = req.body || {};
+    
+    if (subAction === 'subscribe' && subscription) {
+      try {
+        const endpoint = subscription.endpoint;
+        const { dbFetch } = await import('./dbFetch.js');
+        await dbFetch('/rest/v1/push_subscriptions', {
+          method: 'POST',
+          headers: { 'Prefer': 'resolution=merge-duplicates' },
+          body: {
+            endpoint,
+            subscription: typeof subscription === 'string' ? JSON.parse(subscription) : subscription
+          }
+        });
+        console.log('[Web Push] Successfully registered push subscription from client to Railway Postgres!');
+        return res.status(200).json({ success: true, message: 'Push subscription registered on Railway!' });
+      } catch (err) {
+        console.error('[Web Push] Error saving push subscription:', err);
+        return res.status(500).json({ success: false, error: err.message });
+      }
+    }
+
+    if (subAction === 'trigger' || subAction === 'test') {
+      try {
+        const { broadcastPushNotification } = await import('./push-service.js');
+        const resPush = await broadcastPushNotification({
+          title: title || '🔔 11FIT Notifications Active',
+          body: body || 'Real-time order and WhatsApp alerts are live on PC & Mobile!',
+          data: { url: '/' }
+        });
+        return res.status(200).json(resPush);
+      } catch (err) {
+        return res.status(500).json({ success: false, error: err.message });
+      }
+    }
+
+    return res.status(200).json({ success: true, message: 'Web push endpoint active' });
+  }
+
   // Resolve Shopify credentials
   const clientStore = req.headers['x-client-store-url'] || process.env.VITE_SHOPIFY_STORE_URL || process.env.SHOPIFY_STORE_URL || '';
   const clientToken = req.headers['x-client-access-token'] || process.env.VITE_SHOPIFY_ACCESS_TOKEN || process.env.SHOPIFY_ACCESS_TOKEN || '';
