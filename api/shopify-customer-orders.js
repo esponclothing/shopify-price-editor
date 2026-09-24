@@ -81,6 +81,22 @@ async function dispatchWhatsAppStatusNotification(request) {
     const cleanPhone = String(phone).replace(/[^0-9]/g, '');
     const toPhone = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
 
+    const sanitizedComponents = (components || []).map(comp => {
+      if (!comp.parameters) return comp;
+      return {
+        ...comp,
+        parameters: comp.parameters.map(param => {
+          if (param.type === 'text' && typeof param.text === 'string') {
+            return {
+              ...param,
+              text: param.text.replace(/[\r\n\t]+/g, ' ').replace(/\s{2,}/g, ' ').trim()
+            };
+          }
+          return param;
+        })
+      };
+    });
+
     const payload = {
       messaging_product: 'whatsapp',
       to: toPhone,
@@ -88,7 +104,7 @@ async function dispatchWhatsAppStatusNotification(request) {
       template: {
         name: templateName,
         language: { code: 'en_US' },
-        components: components
+        components: sanitizedComponents
       }
     };
 

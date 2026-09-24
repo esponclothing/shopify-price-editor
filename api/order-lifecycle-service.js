@@ -43,10 +43,38 @@ export function formatToWhatsAppPhone(rawPhone) {
 }
 
 /**
+ * Sanitize text parameters for Meta WhatsApp Templates
+ * Meta strictly forbids newlines (\r, \n), tabs (\t), and 4+ consecutive spaces
+ */
+export function sanitizeTemplateParam(val) {
+  if (val === null || val === undefined) return '';
+  return String(val)
+    .replace(/[\r\n\t]+/g, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
+/**
  * Send a WhatsApp template via Meta Cloud API and log to memory
  */
 async function sendWhatsAppTemplate({ toPhone, templateName, components, waToken, phoneId, orderNumber, summaryText }) {
   try {
+    const sanitizedComponents = (components || []).map(comp => {
+      if (!comp.parameters) return comp;
+      return {
+        ...comp,
+        parameters: comp.parameters.map(param => {
+          if (param.type === 'text' && typeof param.text === 'string') {
+            return {
+              ...param,
+              text: sanitizeTemplateParam(param.text)
+            };
+          }
+          return param;
+        })
+      };
+    });
+
     const res = await fetch(`https://graph.facebook.com/v21.0/${phoneId}/messages`, {
       method: 'POST',
       headers: {
@@ -60,7 +88,7 @@ async function sendWhatsAppTemplate({ toPhone, templateName, components, waToken
         template: {
           name: templateName,
           language: { code: 'en_US' },
-          components
+          components: sanitizedComponents
         }
       })
     });
@@ -405,7 +433,7 @@ export async function processOrderLifecycle(order, triggerSource = 'webhook', in
     console.log(`[Order Lifecycle] Triggering ORDER_SHIPPED for Order ${orderName} (${waPhone})...`);
     const courierName = tracking_company || 'Courier';
     const statusText = `Shipped / In Transit 🚚 (via ${courierName})`;
-    const trackDetail = `Tracking Number: ${tracking_number || 'Available soon'}${tracking_url ? `\nTrack your package live: ${tracking_url}` : ''}`;
+    const trackDetail = `Tracking Number: ${tracking_number || 'Available soon'}${tracking_url ? ` | Live Track: ${tracking_url}` : ''}`;
 
     const sent = await sendWhatsAppTemplate({
       toPhone: waPhone,
