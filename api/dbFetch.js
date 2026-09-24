@@ -82,7 +82,7 @@ export async function dbFetch(url, options = {}) {
     } else if (method === 'POST') {
       const body = typeof options.body === 'string' ? JSON.parse(options.body || '{}') : (options.body || {});
       const keys = Object.keys(body);
-      const vals = Object.values(body);
+      const vals = Object.values(body).map(v => (typeof v === 'object' && v !== null ? JSON.stringify(v) : v));
       
       const colStr = keys.map(k => `"${k}"`).join(', ');
       const valStr = vals.map(() => `$${paramIndex++}`).join(', ');
@@ -100,7 +100,8 @@ export async function dbFetch(url, options = {}) {
           saas_merchants: 'id',
           return_requests: 'id',
           shopify_orders: 'id',
-          whatsapp_chat_settings: 'phone'
+          whatsapp_chat_settings: 'phone',
+          push_subscriptions: 'endpoint'
         };
         const pk = TABLE_PK[tableName] || (keys.includes('id') ? 'id' : (keys.includes('phone') ? 'phone' : (keys.includes('device_id') ? 'device_id' : keys[0])));
         const updateSets = keys.map(k => `"${k}" = EXCLUDED."${k}"`).join(', ');
@@ -112,7 +113,7 @@ export async function dbFetch(url, options = {}) {
     } else if (method === 'PATCH') {
       const body = typeof options.body === 'string' ? JSON.parse(options.body || '{}') : (options.body || {});
       const keys = Object.keys(body);
-      const vals = Object.values(body);
+      const vals = Object.values(body).map(v => (typeof v === 'object' && v !== null ? JSON.stringify(v) : v));
       
       const setStr = keys.map(k => `"${k}" = $${paramIndex++}`).join(', ');
       values.push(...vals);

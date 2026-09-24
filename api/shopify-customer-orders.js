@@ -365,8 +365,12 @@ async function returnsHandler(req, res) {
 export default async function handler(req, res) {
   if (
     req.query.action === 'returns' || 
+    req.query.admin === 'true' ||
+    req.headers['x-admin-secret'] ||
     req.body?.action === 'returns_init' || 
     req.body?.action === 'create' || 
+    req.body?.action === 'update_status' || 
+    req.body?.action === 'add_tracking' || 
     req.body?.request_type === 'return' || 
     req.body?.request_type === 'exchange'
   ) {

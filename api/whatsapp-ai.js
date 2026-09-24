@@ -11,8 +11,8 @@ const PROCESSED_WEBHOOK_IDS = new Set();
 
 // Helper: Call AI APIs with Fallback Chain (Supports Groq and Gemini)
 async function callGeminiAPI(messages, apiKey, jsonMode = false, maxTokens = 250) {
-  // 3 Dynamically Verified Active Fallback models for Gemini (As requested)
-  const geminiModels = ['gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.1-pro'];
+  // Dynamically Verified Active Fallback models for Gemini
+  const geminiModels = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'];
   let lastError = null;
   
   let systemInstruction = null;
@@ -219,10 +219,19 @@ async function executeFlowEngine(senderPhone, userText) {
   try {
     // 1. Check if user is currently IN A FLOW
     const stateRes = await axios.get(
-      `/rest/v1/whatsapp_flow_states?phone=eq.${senderPhone}&select=*,whatsapp_flows(flow_json)`, 
+      `/rest/v1/whatsapp_flow_states?phone=eq.${senderPhone}&select=*`, 
       { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } }
     );
     const userState = stateRes.data?.[0];
+    if (userState && userState.flow_id) {
+      const flowRes = await axios.get(
+        `/rest/v1/whatsapp_flows?id=eq.${userState.flow_id}&select=id,flow_json`,
+        { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } }
+      );
+      if (flowRes.data?.[0]?.flow_json) {
+        userState.whatsapp_flows = { flow_json: flowRes.data[0].flow_json };
+      }
+    }
 
     // Helper to traverse and execute nodes
     const runNodes = async (flow, startNodeId, variables) => {
@@ -1424,7 +1433,7 @@ ${userText}`;
       }
 
       let aiReply = null;
-      let usedModel = 'gemini-3.7-flash';
+      let usedModel = 'gemini-2.5-flash';
       try {
         aiReply = await callGeminiAPI(
           [
