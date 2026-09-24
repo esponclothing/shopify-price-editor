@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "start": "node server.js",
+    "start": "node --max-old-space-size=256 server.js",
     "lint": "eslint .",
     "preview": "vite preview",
     "deploy": "npm run build && npx vercel --prod --yes"

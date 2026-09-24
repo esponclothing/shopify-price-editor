@@ -1,9 +1,5 @@
-import pg from 'pg';
-const { Pool } = pg;
-
-export const pool = new Pool({
-  connectionString: process.env.RAILWAY_DATABASE_URL || 'postgresql://postgres:gEeINngvmFomRYZljhTrKNkKrrjlcrfQ@altaria.proxy.rlwy.net:33107/railway'
-});
+import { poolEditor as pool } from './dbPools.js';
+export { pool };
 
 export async function dbFetch(url, options = {}) {
   try {

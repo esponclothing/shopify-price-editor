@@ -1,17 +1,4 @@
-import pg from 'pg';
-const { Pool } = pg;
-
-// Database connection to Shopify-Price-Editor DB (whatsapp_settings, shopify_orders, whatsapp_chat_memory)
-const poolEditor = new Pool({
-  connectionString: process.env.RAILWAY_DATABASE_URL || 'postgresql://postgres:gEeINngvmFomRYZljhTrKNkKrrjlcrfQ@altaria.proxy.rlwy.net:33107/railway',
-  ssl: { rejectUnauthorized: false }
-});
-
-// Database connection to checkout-app DB (checkout_sessions, network_users)
-const poolCheckout = new Pool({
-  connectionString: process.env.CHECKOUT_DATABASE_URL || 'postgresql://postgres:zXuyDwmBoMwdHnUqoFMUIkkKILuEcaas@reseau.proxy.rlwy.net:12168/railway',
-  ssl: { rejectUnauthorized: false }
-});
+import { poolEditor, poolCheckout } from './dbPools.js';
 
 const PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID || '1189183190949431';
 
@@ -235,14 +222,14 @@ async function markSession(sessionId, recoveryStatus, msgId = null, errorMsg = n
 }
 
 export function startAbandonedCartWorker() {
-  console.log('[Auto Ab Cart] Initializing Abandoned Cart Background Worker (Interval: 2 minutes)...');
-  // Initial run after 15 seconds of server boot
+  console.log('[Auto Ab Cart] Initializing Abandoned Cart Background Worker (Interval: 10 minutes)...');
+  // Initial run after 30 seconds of server boot
   setTimeout(() => {
     processAbandonedCarts().catch(err => console.error('[Auto Ab Cart] Boot run error:', err));
-  }, 15000);
+  }, 30000);
 
-  // Recurring run every 2 minutes
+  // Recurring run every 10 minutes (600,000 ms)
   setInterval(() => {
     processAbandonedCarts().catch(err => console.error('[Auto Ab Cart] Interval run error:', err));
-  }, 120000);
+  }, 10 * 60 * 1000);
 }

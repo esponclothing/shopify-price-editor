@@ -3,6 +3,9 @@ import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
+import { startAbandonedCartWorker } from './api/abandoned-cart-worker.js';
+import { startOrderLifecycleWorker } from './api/order-lifecycle-worker.js';
+import { closePools } from './api/dbPools.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -10,37 +13,43 @@ const __dirname = path.dirname(__filename);
 const app = express();
 
 app.use(cors());
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ limit: '50mb', extended: true }));
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
-// Serve API routes
+// Cache for loaded API handler functions to prevent repeated dynamic imports & file reads
+const handlerCache = new Map();
+
+// Serve API routes with handler caching
 app.use('/api', async (req, res) => {
   try {
-    // req.path will be relative to /api, e.g. "/shopify/graphql.json"
     const apiPath = req.path.replace(/^\//, ''); // strip leading slash
+    let moduleKey = apiPath;
     let modulePath = '';
     
-    // Check vercel.json rewrite rule logic manually
     if (apiPath.startsWith('shopify/')) {
+      moduleKey = 'shopify';
       modulePath = path.join(__dirname, 'api', 'shopify.js');
     } else {
-      // Find exact js file
       modulePath = path.join(__dirname, 'api', `${apiPath}.js`);
     }
 
-    if (fs.existsSync(modulePath)) {
-      // Dynamic import
-      // Using a timestamp query to bust module cache in dev if needed, but in prod it's fine
-      const handlerModule = await import(`file://${modulePath}`);
-      const handler = handlerModule.default;
-      if (typeof handler === 'function') {
-        // Mock Vercel req.url behavior (full original URL)
-        req.url = req.originalUrl;
-        return await handler(req, res);
+    let handler = handlerCache.get(moduleKey);
+
+    if (!handler) {
+      if (fs.existsSync(modulePath)) {
+        const handlerModule = await import(`file://${modulePath}`);
+        handler = handlerModule.default;
+        if (typeof handler === 'function') {
+          handlerCache.set(moduleKey, handler);
+        }
       }
     }
+
+    if (typeof handler === 'function') {
+      req.url = req.originalUrl;
+      return await handler(req, res);
+    }
     
-    // If not found or not a function
     res.status(404).json({ error: 'API endpoint not found' });
   } catch (error) {
     console.error(`Error executing ${req.path}:`, error);
@@ -48,9 +57,9 @@ app.use('/api', async (req, res) => {
   }
 });
 
-// Serve static frontend files
+// Serve static frontend files with 1-day cache to reduce Node CPU/bandwidth usage
 const distPath = path.join(__dirname, 'dist');
-app.use(express.static(distPath));
+app.use(express.static(distPath, { maxAge: '1d', etag: true }));
 
 // Fallback for SPA routing
 app.use((req, res, next) => {
@@ -61,11 +70,8 @@ app.use((req, res, next) => {
   }
 });
 
-import { startAbandonedCartWorker } from './api/abandoned-cart-worker.js';
-import { startOrderLifecycleWorker } from './api/order-lifecycle-worker.js';
-
 const port = process.env.PORT || 3000;
-app.listen(port, () => {
+const server = app.listen(port, () => {
   console.log(`Server listening on port ${port}`);
   try {
     startAbandonedCartWorker();
@@ -79,4 +85,11 @@ app.listen(port, () => {
   }
 });
 
-
+// Graceful shutdown
+process.on('SIGTERM', async () => {
+  console.log('Received SIGTERM, closing server and pools...');
+  server.close(async () => {
+    await closePools();
+    process.exit(0);
+  });
+});
