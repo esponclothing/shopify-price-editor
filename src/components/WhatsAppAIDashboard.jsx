@@ -1305,29 +1305,115 @@ export default function WhatsAppAIDashboard({ preSelectPhone }) {
     }
   };
 
-  const renderTextWithLinks = (text) => {
+  const renderFormattedWhatsAppText = (text) => {
     if (!text) return null;
     const urlRegex = /(https?:\/\/[^\s,'")<>]+|www\.[^\s,'")<>]+)/g;
-    const parts = text.split(urlRegex);
-    return parts.map((part, idx) => {
-      if (!part) return null;
-      if (part.match(/^(https?:\/\/|www\.)/i)) {
-        const href = part.startsWith('www.') ? `https://${part}` : part;
-        return (
-          <a
-            key={idx}
-            href={href}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-blue-400 hover:text-blue-300 underline font-semibold break-all cursor-pointer transition-colors"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {part}
-          </a>
-        );
-      }
-      return part;
+    const lines = text.split('\n');
+    return lines.map((line, lIdx) => {
+      const parts = line.split(urlRegex);
+      const renderedParts = parts.map((part, pIdx) => {
+        if (!part) return null;
+        if (part.match(/^(https?:\/\/|www\.)/i)) {
+          const href = part.startsWith('www.') ? `https://${part}` : part;
+          return (
+            <a
+              key={pIdx}
+              href={href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[#53bdeb] hover:underline font-semibold break-all cursor-pointer transition-colors"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {part}
+            </a>
+          );
+        }
+        const boldParts = part.split(/(\*[^\*]+\*)/g);
+        return boldParts.map((bPart, bIdx) => {
+          if (bPart.startsWith('*') && bPart.endsWith('*') && bPart.length > 2) {
+            return <strong key={bIdx} className="font-bold text-white">{bPart.slice(1, -1)}</strong>;
+          }
+          return bPart;
+        });
+      });
+
+      return (
+        <span key={lIdx} className="block min-h-[1.25em]">
+          {renderedParts}
+        </span>
+      );
     });
+  };
+
+  const renderTextWithLinks = (text) => {
+    return renderFormattedWhatsAppText(text);
+  };
+
+  const renderTemplateCard = ({ header, body, footer, buttons }) => {
+    return (
+      <div className="space-y-2.5 text-left py-0.5">
+        {header && (
+          <div className="font-extrabold text-[13px] tracking-wider text-white border-b border-emerald-500/20 pb-1 uppercase">
+            {header}
+          </div>
+        )}
+        <div className="text-[13.5px] leading-relaxed text-[#e9edef] whitespace-pre-wrap">
+          {renderFormattedWhatsAppText(body)}
+        </div>
+        {footer && (
+          <div className="text-[11px] text-slate-400 italic pt-1 border-t border-white/5">
+            {footer}
+          </div>
+        )}
+        {buttons && buttons.length > 0 && (
+          <div className="space-y-1.5 pt-2 border-t border-emerald-500/20">
+            {buttons.map((btn, idx) => (
+              <a
+                key={idx}
+                href={btn.url || '#'}
+                target={btn.url ? '_blank' : undefined}
+                rel="noopener noreferrer"
+                className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg bg-[#00a884]/25 hover:bg-[#00a884]/35 border border-[#00a884]/40 text-[#25d366] hover:text-emerald-300 font-bold text-xs transition-all shadow-sm cursor-pointer"
+                onClick={(e) => { if (!btn.url) e.preventDefault(); }}
+              >
+                <span>{btn.icon || '🌐'}</span>
+                <span>{btn.text}</span>
+              </a>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const cleanChatSnippet = (msg) => {
+    if (!msg) return '';
+    if (msg.includes('[Cashback Credited]') || msg.includes('cashback_credited_v1') || msg.includes('10% Prepaid Cashback')) {
+      const amt = msg.match(/₹?(\d+)/)?.[1] || '';
+      const ord = msg.match(/#\d+/)?.[0] || '';
+      return `🎁 Cashback: Great news! ${amt ? amt + ' credits' : ''} added ${ord ? 'for ' + ord : ''}`;
+    }
+    if (msg.includes('order_confirmed_v2') || msg.includes('Confirmed •')) {
+      const ord = msg.match(/#\d+/)?.[0] || 'Order';
+      const amt = msg.match(/₹[0-9.]+/)?.[0] || '';
+      return `📦 Order ${ord} Confirmed ${amt ? '• ' + amt : ''}`;
+    }
+    if (msg.includes('order_status_check_v1') || msg.includes('Shipped via')) {
+      const ord = msg.match(/#\d+/)?.[0] || 'Order';
+      return `🚚 Order ${ord} Shipped / In Transit`;
+    }
+    if (msg.includes('out_for_delivery_v2') || msg.includes('Out for Delivery')) {
+      const ord = msg.match(/#\d+/)?.[0] || 'Order';
+      return `📦 Order ${ord} Out for Delivery Today`;
+    }
+    if (msg.includes('order_delivered_confirm_v1') || msg.includes('Delivered successfully')) {
+      const ord = msg.match(/#\d+/)?.[0] || 'Order';
+      return `🎉 Order ${ord} Delivered Successfully`;
+    }
+    return msg.replace(/\[IMAGE_ID:\d+\]|\[PHOTO SENT\]\s*\(id:\s*\d+\)/gi, '🖼️ Photo')
+              .replace(/\[AUDIO_ID:\d+\]|\[VOICE NOTE SENT\]\s*\(id:\s*\d+\)/gi, '🎙️ Voice Note')
+              .replace(/\[VIDEO_ID:\d+\]|\[VIDEO SENT\]\s*\(id:\s*\d+\)/gi, '📹 Video')
+              .trim();
   };
 
   const renderMessageContent = (content) => {
@@ -1346,7 +1432,7 @@ export default function WhatsAppAIDashboard({ preSelectPhone }) {
             <source src={`/api/whatsapp-inbox?action=media&id=${id}`} type="audio/mpeg" />
             Your browser does not support audio playback.
           </audio>
-          {textWithoutId && <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">{renderTextWithLinks(textWithoutId)}</p>}
+          {textWithoutId && <div className="text-sm whitespace-pre-wrap break-words leading-relaxed">{renderTextWithLinks(textWithoutId)}</div>}
         </div>
       );
     }
@@ -1365,7 +1451,7 @@ export default function WhatsAppAIDashboard({ preSelectPhone }) {
               className="max-w-[240px] max-h-[240px] rounded-lg object-cover border border-slate-700 hover:opacity-90 transition-opacity"
             />
           </a>
-          {textWithoutId && <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">{renderTextWithLinks(textWithoutId)}</p>}
+          {textWithoutId && <div className="text-sm whitespace-pre-wrap break-words leading-relaxed">{renderTextWithLinks(textWithoutId)}</div>}
         </div>
       );
     }
@@ -1380,12 +1466,94 @@ export default function WhatsAppAIDashboard({ preSelectPhone }) {
           <video controls className="max-w-[240px] rounded-lg border border-slate-700">
             <source src={`/api/whatsapp-inbox?action=media&id=${id}`} type="video/mp4" />
           </video>
-          {textWithoutId && <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">{renderTextWithLinks(textWithoutId)}</p>}
+          {textWithoutId && <div className="text-sm whitespace-pre-wrap break-words leading-relaxed">{renderTextWithLinks(textWithoutId)}</div>}
         </div>
       );
     }
 
-    return <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">{renderTextWithLinks(content)}</p>;
+    // --- TEMPLATE 1: Cashback Credited (Marketing Template) ---
+    if (content.includes('[Cashback Credited]') || content.includes('cashback_credited_v1') || content.includes('10% Prepaid Cashback')) {
+      const amountMatch = content.match(/₹?(\d+(?:\.\d+)?)\s*(?:\(10%|\s*credits|\s*cashback)/i) || content.match(/Great news!\s*₹?(\d+)/i);
+      const orderMatch = content.match(/order\s*(#\d+|\d+)/i);
+      const credits = amountMatch ? amountMatch[1] : '85';
+      const orderNum = orderMatch ? (orderMatch[1].startsWith('#') ? orderMatch[1] : `#${orderMatch[1]}`) : '#Order';
+
+      return renderTemplateCard({
+        body: `Great news! *${credits} credits* are added in your account for cashback of order *${orderNum}*. You can use them in your next order. Valid for 14 days only!`,
+        buttons: [
+          { text: 'Visit Website', url: 'https://11fit.in/collections/all', icon: '🌐' }
+        ]
+      });
+    }
+
+    // --- TEMPLATE 2: Order Confirmed (Utility Template: order_confirmed_v2) ---
+    if (content.includes('order_confirmed_v2') || (content.includes('Auto Workflow') && content.includes('Confirmed •'))) {
+      const orderMatch = content.match(/Order\s*(#\d+|\d+)/i);
+      const orderNum = orderMatch ? (orderMatch[1].startsWith('#') ? orderMatch[1] : `#${orderMatch[1]}`) : '#Order';
+      const paymentMatch = content.match(/(?:Confirmed\s*•\s*|Payment Info:\s*)(₹[^\n]+)/i);
+      const paymentInfo = paymentMatch ? paymentMatch[1] : 'Prepaid (Confirmed)';
+      const customerFirstName = (selectedChat?.customer_name || '').split(' ')[0] || 'there';
+
+      return renderTemplateCard({
+        header: 'ORDER CONFIRMED',
+        body: `Hi ${customerFirstName}, thank you for shopping with *11FIT*! 🙌\n\nYour order *${orderNum}* has been confirmed and is being processed.\n\n💵 *Payment Info:* ${paymentInfo}\n📍 *Delivery Address:* Address on file\n\nYou will receive tracking details as soon as it ships!`,
+        footer: '11FIT Activewear • Premium Fit & Fabric',
+        buttons: [
+          { text: 'Track my order', icon: '🔘' }
+        ]
+      });
+    }
+
+    // --- TEMPLATE 3: Order Shipped (Utility Template: order_status_check_v1) ---
+    if (content.includes('order_status_check_v1') || (content.includes('Auto Workflow') && content.includes('Shipped'))) {
+      const orderMatch = content.match(/Order\s*(#\d+|\d+)/i);
+      const orderNum = orderMatch ? (orderMatch[1].startsWith('#') ? orderMatch[1] : `#${orderMatch[1]}`) : '#Order';
+      const courierMatch = content.match(/via\s*([^(\n]+)/i);
+      const courier = courierMatch ? courierMatch[1].trim() : 'Courier';
+      const trackingMatch = content.match(/Tracking Number:\s*([^\s\n|)]+)/i);
+      const trackUrlMatch = content.match(/Live Track:\s*(https?:\/\/[^\s\n)]+)/i);
+      const customerFirstName = (selectedChat?.customer_name || '').split(' ')[0] || 'there';
+
+      const trackingText = trackingMatch
+        ? `*Tracking Number:* ${trackingMatch[1]}${trackUrlMatch ? `\n*Live Track:* ${trackUrlMatch[1]}` : ''}`
+        : `*Courier Partner:* ${courier}`;
+
+      return renderTemplateCard({
+        header: 'ORDER STATUS UPDATE',
+        body: `Hi ${customerFirstName}, here is the current status of your *11FIT* order *${orderNum}*:\n\n*Status:* Shipped / In Transit 🚚 (via ${courier})\n${trackingText}\n\nIf you need any further assistance, please reply to this message. Thank you for choosing 11FIT! 🙌`,
+        footer: '11FIT Support • support@11fit.com'
+      });
+    }
+
+    // --- TEMPLATE 4: Out for Delivery (Utility Template: out_for_delivery_v2) ---
+    if (content.includes('out_for_delivery_v2') || (content.includes('Auto Workflow') && content.includes('Out for Delivery'))) {
+      const orderMatch = content.match(/Order\s*(#\d+|\d+)/i);
+      const orderNum = orderMatch ? (orderMatch[1].startsWith('#') ? orderMatch[1] : `#${orderMatch[1]}`) : '#Order';
+      const paymentMatch = content.match(/(?:Out for Delivery\s*•\s*)(₹[^\n]+)/i);
+      const paymentInfo = paymentMatch ? paymentMatch[1] : 'Arriving today';
+      const customerFirstName = (selectedChat?.customer_name || '').split(' ')[0] || 'there';
+
+      return renderTemplateCard({
+        header: 'OUT FOR DELIVERY TODAY',
+        body: `Hi ${customerFirstName}, your *11FIT* order *${orderNum}* is *OUT FOR DELIVERY* today! 📦\n\nPlease keep your phone reachable so the delivery executive can contact you when they arrive at your address.\n\n💵 *Payment Info:* ${paymentInfo}\n\nThank you for choosing 11FIT!`,
+        footer: '11FIT Activewear • Quick Delivery'
+      });
+    }
+
+    // --- TEMPLATE 5: Order Delivered (Utility Template: order_delivered_confirm_v1) ---
+    if (content.includes('order_delivered_confirm_v1') || (content.includes('Auto Workflow') && content.includes('Delivered'))) {
+      const orderMatch = content.match(/Order\s*(#\d+|\d+)/i);
+      const orderNum = orderMatch ? (orderMatch[1].startsWith('#') ? orderMatch[1] : `#${orderMatch[1]}`) : '#Order';
+      const customerFirstName = (selectedChat?.customer_name || '').split(' ')[0] || 'there';
+
+      return renderTemplateCard({
+        header: 'ORDER DELIVERED',
+        body: `Hi ${customerFirstName}, your *11FIT* order *${orderNum}* has been delivered successfully. 🎉\n\nWe hope you are happy with your purchase! If you have any questions, issues, or need help with sizing or the product, just reply to this message and our support team will assist you right away.\n\nThank you for shopping with 11FIT. We appreciate your trust! 🙌`,
+        footer: '11FIT Activewear • support@11fit.com'
+      });
+    }
+
+    return <div className="text-sm whitespace-pre-wrap break-words leading-relaxed">{renderTextWithLinks(content)}</div>;
   };
 
   const status24h = get24HourStatus(selectedChat);
@@ -1761,7 +1929,7 @@ export default function WhatsAppAIDashboard({ preSelectPhone }) {
                         </div>
                         <p className="text-xs text-slate-400 truncate mb-2">
                           {chat.last_role === 'assistant' ? '🤖: ' : '👤: '}
-                          {chat.last_message}
+                          {cleanChatSnippet(chat.last_message)}
                         </p>
                         <div className="flex items-center gap-1.5 flex-wrap">
                           {chat.is_within_24h ? (
@@ -2031,7 +2199,7 @@ export default function WhatsAppAIDashboard({ preSelectPhone }) {
                           >
                             <div className="flex items-center justify-between gap-4 mb-1">
                               <span className={`text-[10px] font-bold opacity-75 uppercase ${isInternalNote ? 'text-amber-400' : 'text-emerald-300'}`}>
-                                {isInternalNote ? '🔒 Private Note (Invisible to Customer)' : isAI ? '🤖 11FIT Assistant / Manual' : `👤 ${formatPhone(msg.phone)}`}
+                                {isInternalNote ? '🔒 Private Note (Invisible to Customer)' : (typeof msg.content === 'string' && (msg.content.includes('[Auto Workflow:') || msg.content.includes('[Cashback Credited]') || msg.content.includes('cashback_credited_v1') || msg.content.includes('order_confirmed_v2') || msg.content.includes('order_status_check_v1') || msg.content.includes('out_for_delivery_v2') || msg.content.includes('order_delivered_confirm_v1'))) ? '⚡ WhatsApp Template • Delivered' : isAI ? '🤖 11FIT Assistant / Manual' : `👤 ${formatPhone(msg.phone)}`}
                               </span>
                             </div>
                             <div className="my-0.5">
