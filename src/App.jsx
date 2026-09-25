@@ -1356,14 +1356,14 @@ function WhatsAppAISettingsPanel() {
         <Phone className="w-4 h-4 text-green-500" /> WhatsApp AI Bot Configuration
       </h3>
       <p className="text-[11px] text-slate-400 leading-relaxed">
-        Change the Groq API key or WhatsApp Token for your live WhatsApp AI bot. Changes take effect <strong className="text-green-400">instantly</strong> — no redeployment needed!
+        Update the WhatsApp Cloud Token for your live WhatsApp AI bot. Changes take effect <strong className="text-green-400">instantly</strong> — no redeployment needed!
       </p>
 
       {/* Current Status */}
       <div className="bg-slate-800/60 border border-slate-700 rounded-xl p-3 space-y-1">
         <div className="flex items-center gap-2 text-xs mb-2 pb-2 border-b border-slate-700">
           <span className="text-slate-300">
-            <strong className="text-white">Note:</strong> The WhatsApp AI Bot now natively shares the <strong className="text-yellow-400">Google Gemini API Key</strong> and models you configure in the <strong>AI Engine Setup</strong> tab.
+            <strong className="text-white">Note:</strong> The WhatsApp AI Bot natively uses the <strong className="text-yellow-400">Google Gemini API</strong> and models configured in the <strong>AI Engine Setup</strong> tab.
           </span>
         </div>
         <div className="flex items-center gap-2 text-xs mt-2">
@@ -1372,7 +1372,7 @@ function WhatsAppAISettingsPanel() {
         </div>
         <div className="flex items-center gap-2 text-xs">
           <span className={`w-2 h-2 rounded-full ${hasWaToken ? 'bg-green-500' : 'bg-yellow-500'}`} />
-          <span className="text-slate-300">WhatsApp Token: {hasWaToken ? <span className="text-green-400 font-bold">Active ✅</span> : <span className="text-yellow-400 font-bold">Using Vercel Env</span>}</span>
+          <span className="text-slate-300">WhatsApp Token: {hasWaToken ? <span className="text-green-400 font-bold">Active ✅</span> : <span className="text-yellow-400 font-bold">Using Env</span>}</span>
         </div>
       </div>
 
@@ -1409,7 +1409,7 @@ function WhatsAppAISettingsPanel() {
       {/* Info Box */}
       <div className="bg-green-950/30 border border-green-900/50 rounded-xl p-3">
         <p className="text-[10px] text-green-400/80 leading-relaxed">
-          💡 <strong>Free Tier:</strong> Groq provides ~14,400 free requests/day (~200-250 customers daily). If credits exhaust, just create a new free key at <a href="https://console.groq.com" target="_blank" rel="noreferrer" className="underline text-green-300 hover:text-green-200">console.groq.com</a> and paste it here. No redeployment needed!
+          💡 <strong>Google Gemini Intelligence:</strong> The WhatsApp AI Bot, smart order lookup, and catalog recommendations run 24/7 on Gemini with automated fallback chains.
         </p>
       </div>
     </div>
@@ -1576,9 +1576,13 @@ function SettingsModal({ storeUrl, setStoreUrl, accessToken, setAccessToken, sto
                     <div>
                       <label className="block text-xs font-medium text-slate-400 mb-1">Gemini Model</label>
                       <select value={settings.geminiModel} onChange={e => setSettings({ ...settings, geminiModel: e.target.value })} className="w-full px-3 py-2 border border-slate-700 bg-slate-800 text-white rounded-xl text-sm focus:ring-2 focus:ring-yellow-500/50 outline-none">
-                        <option value="gemini-3.7-flash">Gemini 3.7 Flash (Recommended Main)</option>
-                        <option value="gemini-3.6-flash">Gemini 3.6 Flash (Fallback)</option>
-                        <option value="gemini-3.1-pro">Gemini 3.1 Pro (2nd Fallback)</option>
+                        <option value="gemini-flash-latest">Gemini Flash Latest (Auto-Updated Fast)</option>
+                        <option value="gemini-3.8-flash">Gemini 3.8 Flash (Latest Features)</option>
+                        <option value="gemini-3.7-flash">Gemini 3.7 Flash</option>
+                        <option value="gemini-3.6-flash">Gemini 3.6 Flash</option>
+                        <option value="gemini-flash-lite-latest">Gemini Flash Lite (Ultra Fast)</option>
+                        <option value="gemini-3.1-flash-lite">Gemini 3.1 Flash Lite</option>
+                        <option value="gemini-pro-latest">Gemini Pro Latest (Complex Reasoning)</option>
                       </select>
                     </div>
                   </>
@@ -1795,7 +1799,8 @@ function ProductEditorModal({ product, products, onClose, collections, mainHandl
 
     try {
       const savedSettings = JSON.parse(localStorage.getItem('recoverySettings') || '{}');
-      const aiProvider = savedSettings.aiProvider || 'groq';
+      const apiKey = savedSettings.geminiApiKey || import.meta.env.VITE_GEMINI_API_KEY;
+      if (!apiKey) throw new Error("Gemini API key is missing. Add it in Settings.");
 
       const referenceProducts = (products || []).filter(p => p.id !== product.id).slice(0, 2).map(p => ({
         title: p.title,
@@ -1850,86 +1855,39 @@ Do not wrap the JSON in markdown code blocks. Just output raw JSON.`;
 
       let responseText = '';
 
-      if (aiProvider === 'gemini') {
-        const apiKey = savedSettings.geminiApiKey || import.meta.env.VITE_GEMINI_API_KEY;
-        if (!apiKey) throw new Error("Gemini API key is missing. Add it in Settings.");
+      const primaryModel = savedSettings.geminiModel || 'gemini-flash-latest';
+      const contents = [];
+      const userParts = [{ text: `User request: ${aiPrompt}` }];
 
-        const primaryModel = savedSettings.geminiModel || 'gemini-1.5-flash';
-        const fallbackModel = 'gemini-1.5-flash-8b';
-
-        const contents = [];
-        const userParts = [{ text: `User request: ${aiPrompt}` }];
-
-        if (imageBase64) {
-          userParts.push({ inlineData: { mimeType: imageFile.type, data: imageBase64 } });
-        } else if (!product.isNew) {
-          for (let i = 0; i < (product.images?.edges?.length || 0) && i < 1; i++) {
-            try {
-              const imgRes = await axios.get(product.images.edges[i].node.url, { responseType: 'blob' });
-              const reader = new FileReader();
-              const b64 = await new Promise((resolve) => {
-                reader.readAsDataURL(imgRes.data);
-                reader.onloadend = () => resolve(reader.result.replace(/^data:image\/(png|jpeg|jpg|webp);base64,/, ''));
-              });
-              userParts.push({ inlineData: { mimeType: imgRes.data.type, data: b64 } });
-            } catch (e) {
-              console.warn("Failed to load existing image for AI", e);
-            }
+      if (imageBase64) {
+        userParts.push({ inlineData: { mimeType: imageFile.type, data: imageBase64 } });
+      } else if (!product.isNew) {
+        for (let i = 0; i < (product.images?.edges?.length || 0) && i < 1; i++) {
+          try {
+            const imgRes = await axios.get(product.images.edges[i].node.url, { responseType: 'blob' });
+            const reader = new FileReader();
+            const b64 = await new Promise((resolve) => {
+              reader.readAsDataURL(imgRes.data);
+              reader.onloadend = () => resolve(reader.result.replace(/^data:image\/(png|jpeg|jpg|webp);base64,/, ''));
+            });
+            userParts.push({ inlineData: { mimeType: imgRes.data.type, data: b64 } });
+          } catch (e) {
+            console.warn("Failed to load existing image for AI", e);
           }
         }
-
-        contents.push({ role: "user", parts: userParts });
-
-        const requestPayload = {
-          systemInstruction: { parts: [{ text: systemPrompt }] },
-          contents: contents,
-          generationConfig: { temperature: 0.7, responseMimeType: "application/json" }
-        };
-
-        let res;
-        try {
-          res = await axios.post(`/api/gemini-proxy`, { model: primaryModel, apiKey, requestPayload });
-        } catch (primaryErr) {
-          console.warn(`Primary model ${primaryModel} failed. Falling back to ${fallbackModel}...`, primaryErr);
-          res = await axios.post(`/api/gemini-proxy`, { model: fallbackModel, apiKey, requestPayload });
-        }
-        responseText = res.data.candidates[0].content.parts[0].text;
-      } else if (aiProvider === 'groq') {
-        const groqApiKey = savedSettings.groqApiKey;
-        if (!groqApiKey) throw new Error("Groq API key is missing. Add it in Settings.");
-
-        const validGroqModels = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'meta-llama/llama-4-scout-17b-16e-instruct', 'qwen/qwen3.6-27b', 'openai/gpt-oss-120b'];
-        const groqModel = validGroqModels.includes(savedSettings.groqModel) ? savedSettings.groqModel : 'llama-3.3-70b-versatile';
-
-        const isVisionModel = groqModel.includes('vision');
-        const messages = [{ role: "system", content: systemPrompt }];
-
-        if (imageBase64 && isVisionModel) {
-          messages.push({
-            role: "user",
-            content: [
-              { type: "text", text: `User request: ${aiPrompt}` },
-              { type: "image_url", image_url: { url: `data:${imageFile.type};base64,${imageBase64}` } }
-            ]
-          });
-        } else {
-          messages.push({ role: "user", content: `User request: ${aiPrompt}` });
-        }
-
-        const res = await axios.post('https://api.groq.com/openai/v1/chat/completions', {
-          model: groqModel,
-          messages: messages,
-          temperature: 0.7,
-          response_format: { type: "json_object" }
-        }, {
-          headers: {
-            'Authorization': `Bearer ${groqApiKey}`,
-            'Content-Type': 'application/json'
-          }
-        });
-
-        responseText = res.data.choices[0].message.content;
       }
+
+      contents.push({ role: "user", parts: userParts });
+
+      const requestPayload = {
+        systemInstruction: { parts: [{ text: systemPrompt }] },
+        contents: contents,
+        generationConfig: { temperature: 0.7, responseMimeType: "application/json" }
+      };
+
+      const res = await axios.post(`/api/gemini-proxy`, { model: primaryModel, apiKey, requestPayload });
+      const candidate = res.data?.candidates?.[0];
+      responseText = candidate?.content?.parts ? candidate.content.parts.map(p => p.text || '').filter(Boolean).join('\n').trim() : '';
 
       responseText = responseText.replace(/```json\n/g, '').replace(/```\n?/g, '');
       let parsedData = JSON.parse(responseText);
@@ -4376,13 +4334,10 @@ function SeoOptimizerDashboard({ products, onRefresh }) {
     if (selectedList.length === 0) return alert("Select at least one product to optimize!");
 
     const savedSettings = JSON.parse(localStorage.getItem('recoverySettings') || '{}');
-    const aiProvider = savedSettings.aiProvider || 'groq';
-    const apiKey = aiProvider === 'gemini' 
-      ? (savedSettings.geminiApiKey || import.meta.env.VITE_GEMINI_API_KEY)
-      : savedSettings.groqApiKey;
+    const apiKey = savedSettings.geminiApiKey || import.meta.env.VITE_GEMINI_API_KEY;
 
     if (!apiKey) {
-      return alert("Missing AI API Key! Please configure your Gemini or Groq credentials in the Settings modal.");
+      return alert("Missing Gemini API Key! Please configure your Gemini credentials in the Settings modal.");
     }
 
     setLoading(true);
@@ -4408,29 +4363,14 @@ Do not wrap it in markdown block. Return raw JSON.`;
 
         let responseText = '';
 
-        if (aiProvider === 'gemini') {
-          const model = savedSettings.geminiModel || 'gemini-1.5-flash';
-          const requestPayload = {
-            contents: [{ role: "user", parts: [{ text: systemPrompt }] }],
-            generationConfig: { temperature: 0.7, responseMimeType: "application/json" }
-          };
-          const res = await axios.post(`/api/gemini-proxy`, { model, apiKey, requestPayload });
-          responseText = res.data.candidates[0].content.parts[0].text;
-        } else if (aiProvider === 'groq') {
-          const model = savedSettings.groqModel || 'llama-3.3-70b-versatile';
-          const res = await axios.post('https://api.groq.com/openai/v1/chat/completions', {
-            model: model,
-            messages: [{ role: "user", content: systemPrompt }],
-            temperature: 0.7,
-            response_format: { type: "json_object" }
-          }, {
-            headers: {
-              'Authorization': `Bearer ${apiKey}`,
-              'Content-Type': 'application/json'
-            }
-          });
-          responseText = res.data.choices[0].message.content;
-        }
+        const model = savedSettings.geminiModel || 'gemini-flash-latest';
+        const requestPayload = {
+          contents: [{ role: "user", parts: [{ text: systemPrompt }] }],
+          generationConfig: { temperature: 0.7, responseMimeType: "application/json" }
+        };
+        const res = await axios.post(`/api/gemini-proxy`, { model, apiKey, requestPayload });
+        const candidate = res.data?.candidates?.[0];
+        responseText = candidate?.content?.parts ? candidate.content.parts.map(p => p.text || '').filter(Boolean).join('\n').trim() : '';
 
         responseText = responseText.replace(/```json\n/g, '').replace(/```\n?/g, '');
         const seoData = JSON.parse(responseText);
@@ -4643,10 +4583,10 @@ function AltImageManagerDashboard({ onRefresh }) {
     if (selectedList.length === 0) return alert("Select at least one image to tag!");
 
     const savedSettings = JSON.parse(localStorage.getItem('recoverySettings') || '{}');
-    const groqKey = savedSettings.groqApiKey || import.meta.env.VITE_GROQ_API_KEY;
+    const apiKey = savedSettings.geminiApiKey || import.meta.env.VITE_GEMINI_API_KEY;
 
-    if (!groqKey) {
-      return alert("Missing Groq API Key! Please configure your Groq API credentials in the Settings modal.");
+    if (!apiKey) {
+      return alert("Missing Gemini API Key! Please configure your Gemini API credentials in the Settings modal.");
     }
 
     setLoading(true);
@@ -4676,47 +4616,55 @@ function AltImageManagerDashboard({ onRefresh }) {
     try {
       for (let i = 0; i < selectedList.length; i++) {
         if (i > 0) {
-          setStatusMessage("Waiting a brief moment to avoid rate limits...");
-          await new Promise(resolve => setTimeout(resolve, 1500));
+          setStatusMessage("Waiting a brief moment between images...");
+          await new Promise(resolve => setTimeout(resolve, 800));
         }
 
         const item = selectedList[i];
-        setStatusMessage(`Analyzing image ${i + 1} of ${selectedList.length} with AI: ${item.productTitle}...`);
+        setStatusMessage(`Analyzing image ${i + 1} of ${selectedList.length} with Gemini AI: ${item.productTitle}...`);
 
-        const res = await fetchWithRetry(() => axios.post('https://api.groq.com/openai/v1/chat/completions', {
-          model: 'meta-llama/llama-4-scout-17b-16e-instruct',
-          messages: [
-            {
-              role: 'user',
-              content: [
-                {
-                  type: 'image_url',
-                  image_url: { url: item.imageUrl }
-                },
-                {
-                  type: 'text',
-                  text: `Analyze this image for the product "${item.productTitle}" (Type: "${item.productType}", Brand: "${item.vendor}"). Write a highly concise, SEO-rich alt tag (under 12 words) describing the garment design, style, color, and fit. Return ONLY the alt tag text as raw output.`
-                }
-              ]
-            }
-          ],
-          max_tokens: 80
-        }, {
-          headers: {
-            'Authorization': `Bearer ${groqKey}`,
-            'Content-Type': 'application/json'
-          }
+        let b64 = '';
+        let mimeType = 'image/jpeg';
+        try {
+          const imgRes = await axios.get(item.imageUrl, { responseType: 'blob' });
+          mimeType = imgRes.data?.type || 'image/jpeg';
+          const reader = new FileReader();
+          b64 = await new Promise((resolve) => {
+            reader.readAsDataURL(imgRes.data);
+            reader.onloadend = () => resolve(reader.result.replace(/^data:image\/(png|jpeg|jpg|webp);base64,/, ''));
+          });
+        } catch (e) {
+          console.warn("Failed to fetch image binary for Gemini, using text prompt", e);
+        }
+
+        const userParts = [
+          { text: `Analyze this garment image for the product "${item.productTitle}" (Type: "${item.productType}", Brand: "${item.vendor}"). Write a highly concise, SEO-rich alt tag (under 12 words) describing the garment design, style, color, and fit. Return ONLY the plain alt tag text.` }
+        ];
+        if (b64) {
+          userParts.push({ inlineData: { mimeType, data: b64 } });
+        }
+
+        const requestPayload = {
+          contents: [{ role: "user", parts: userParts }],
+          generationConfig: { temperature: 0.4, maxOutputTokens: 100 }
+        };
+
+        const res = await fetchWithRetry(() => axios.post('/api/gemini-proxy', {
+          model: savedSettings.geminiModel || 'gemini-flash-latest',
+          apiKey,
+          requestPayload
         }));
 
-        console.log('[Groq Vision] Response data:', res.data);
-        const generatedAlt = res.data.choices?.[0]?.message?.content?.trim();
+        const candidate = res.data?.candidates?.[0];
+        const generatedAlt = candidate?.content?.parts ? candidate.content.parts.map(p => p.text || '').filter(Boolean).join('').trim() : '';
+
         if (!generatedAlt) {
-          console.warn('[Groq Vision] No alt tag text found in response:', res.data);
-          alert(`Groq returned empty text for ${item.productTitle}.`);
+          console.warn('[Gemini Vision] No alt tag text found in response:', res.data);
+          alert(`Gemini returned empty text for ${item.productTitle}.`);
           continue;
         }
 
-        console.log(`[Groq Vision] Generated alt for "${item.productTitle}":`, generatedAlt);
+        console.log(`[Gemini Vision] Generated alt for "${item.productTitle}":`, generatedAlt);
 
         const mutation = `
           mutation productUpdateMedia($productId: ID!, $media: [UpdateMediaInput!]!) {
@@ -4768,7 +4716,7 @@ function AltImageManagerDashboard({ onRefresh }) {
           <h2 className="text-lg font-bold flex items-center gap-2 text-white">
             <ImageIcon className="w-5 h-5 text-yellow-500" /> AI Image Alt Tag Manager
           </h2>
-          <p className="text-xs text-slate-400 mt-1">Scans product images and auto-generates descriptive, SEO-rich alt tags using the Groq Vision model.</p>
+          <p className="text-xs text-slate-400 mt-1">Scans product images and auto-generates descriptive, SEO-rich alt tags using Google Gemini Vision.</p>
         </div>
         <div className="flex items-center gap-3">
           <button
@@ -4784,7 +4732,7 @@ function AltImageManagerDashboard({ onRefresh }) {
             className="px-5 py-2 bg-gradient-to-r from-yellow-500 to-amber-600 hover:from-yellow-600 hover:to-amber-700 text-slate-950 font-bold rounded-xl text-xs transition-all disabled:opacity-50 flex items-center gap-2 shadow-md cursor-pointer"
           >
             {loading ? <div className="w-3 h-3 border-2 border-slate-950 border-t-transparent rounded-full animate-spin"></div> : <Sparkles className="w-4 h-4" />}
-            {loading ? 'Analyzing Images with Groq...' : 'Bulk Tag Images with Groq'}
+            {loading ? 'Analyzing Images with Gemini...' : 'Bulk Tag Images with Gemini AI'}
           </button>
         </div>
       </div>

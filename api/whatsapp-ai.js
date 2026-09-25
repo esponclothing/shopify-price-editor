@@ -3,16 +3,24 @@ import axios from './dbWrapper.js';
 // Permanent Credentials
 const SHOPIFY_STORE_URL = process.env.VITE_SHOPIFY_STORE_URL || 'i2tu0d-jc.myshopify.com';
 const SHOPIFY_ACCESS_TOKEN = process.env.VITE_SHOPIFY_ACCESS_TOKEN || '';
-const GROQ_API_KEY = process.env.VITE_GROQ_API_KEY || '';
 
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhraXVrYmVibm50anpmaWx5Zm1oIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4NTIyMjExOCwiZXhwIjoyMTAwNzk4MTE4fQ.bqc4x9ok4pgmcffKPpj-BOUELvAli5weCJtwuL4X7Rc';
 
 const PROCESSED_WEBHOOK_IDS = new Set();
 
-// Helper: Call AI APIs with Fallback Chain (Supports Groq and Gemini)
-async function callGeminiAPI(messages, apiKey, jsonMode = false, maxTokens = 250) {
-  // Dynamically Verified Active Fallback models for Gemini
-  const geminiModels = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'];
+// Helper: Call AI APIs with Fallback Chain (Google Gemini)
+async function callGeminiAPI(messages, apiKey, jsonMode = false, maxTokens = 600) {
+  // Active verified fallback models for Gemini
+  const geminiModels = [
+    'gemini-flash-latest',
+    'gemini-3.8-flash',
+    'gemini-3.7-flash',
+    'gemini-3.6-flash',
+    'gemini-flash-lite-latest',
+    'gemini-3.1-flash-lite',
+    'gemini-pro-latest',
+    'gemini-3.1-pro-preview'
+  ];
   let lastError = null;
   
   let systemInstruction = null;
@@ -33,21 +41,23 @@ async function callGeminiAPI(messages, apiKey, jsonMode = false, maxTokens = 250
       console.log(`[AI Fallback] Testing Gemini model: ${model}`);
       const payload = {
         contents,
-        generationConfig: { temperature: 0.4, maxOutputTokens: maxTokens }
+        generationConfig: { temperature: 0.4, maxOutputTokens: Math.max(maxTokens, 300) }
       };
       if (systemInstruction) payload.systemInstruction = systemInstruction;
       if (jsonMode) payload.generationConfig.responseMimeType = "application/json";
 
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-      const res = await axios.post(url, payload, { headers: { 'Content-Type': 'application/json' }, timeout: 10000 });
+      const res = await axios.post(url, payload, { headers: { 'Content-Type': 'application/json' }, timeout: 12000 });
       
-      if (res.data?.candidates?.[0]?.content?.parts?.[0]?.text) {
-        return res.data.candidates[0].content.parts[0].text;
+      const candidate = res.data?.candidates?.[0];
+      if (candidate?.content?.parts) {
+        const text = candidate.content.parts.map(p => p.text || '').filter(Boolean).join('\n').trim();
+        if (text) return text;
       }
     } catch (err) {
       console.error(`[AI Fallback] Gemini model ${model} failed:`, err.response?.data?.error?.message || err.message);
       lastError = err;
-      await new Promise(r => setTimeout(r, 500));
+      await new Promise(r => setTimeout(r, 300));
     }
   }
   throw new Error('All Gemini fallback models failed: ' + (lastError?.message || 'Unknown error'));
@@ -268,11 +278,20 @@ async function executeFlowEngine(senderPhone, userText) {
             }
           } else if (node.type === 'ai_prompt') {
             const prompt = inter(node.data.prompt);
-            const groqKey = process.env.GROQ_API_KEY || '';
-            if (groqKey && prompt) {
+            let geminiKey = process.env.VITE_GEMINI_API_KEY || '';
+            if (!geminiKey) {
+              try {
+                const settingsRes = await axios.get(
+                  `/rest/v1/whatsapp_settings?select=gemini_api_key&order=id.desc&limit=1`,
+                  { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } }
+                );
+                if (settingsRes.data?.[0]?.gemini_api_key) geminiKey = settingsRes.data[0].gemini_api_key;
+              } catch (_) {}
+            }
+            if (geminiKey && prompt) {
               let aiText = 'AI unavailable';
               try {
-                aiText = await callGeminiAPI([{ role: "system", content: prompt }], groqKey);
+                aiText = await callGeminiAPI([{ role: "system", content: prompt }], geminiKey, false, 600);
               } catch (err) {
                 console.error("AI Prompt error:", err.message);
               }
@@ -900,15 +919,14 @@ export default async function handler(req, res) {
       const text = req.body?.text;
       if (!text) return res.status(400).json({ success: false, error: 'Text required' });
       try {
-        let activeGroqKey = process.env.VITE_GROQ_API_KEY || 'AQ.Ab8RN6J-54eZLqYDuD80EuP-nzMFBgC4gFxwFw74oCeCsfiUHA';
+        let activeGeminiKey = process.env.VITE_GEMINI_API_KEY || '';
         try {
           const settingsRes = await axios.get(
-            `/rest/v1/whatsapp_settings?select=groq_api_key&order=id.desc&limit=1`,
+            `/rest/v1/whatsapp_settings?select=gemini_api_key&order=id.desc&limit=1`,
             { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } }
           );
-          if (settingsRes.data?.[0]?.groq_api_key && 
-             (settingsRes.data[0].groq_api_key.startsWith('AQ.') || settingsRes.data[0].groq_api_key.startsWith('AIza'))) {
-            activeGroqKey = settingsRes.data[0].groq_api_key;
+          if (settingsRes.data?.[0]?.gemini_api_key) {
+            activeGeminiKey = settingsRes.data[0].gemini_api_key;
           }
         } catch (_) {}
 
@@ -924,10 +942,8 @@ CRITICAL RULES:
 
 Agent's Note: "${text}"`;
 
-        const rewrittenText = await callGeminiAPI([{ role: 'user', content: prompt }], activeGroqKey, false, 600);
-        let aiRes = { data: { choices: [{ message: { content: rewrittenText } }] } };
-
-        let rewritten = aiRes.data.choices[0].message.content.trim();
+        const rewrittenText = await callGeminiAPI([{ role: 'user', content: prompt }], activeGeminiKey, false, 600);
+        let rewritten = rewrittenText ? rewrittenText.trim() : text;
         if (rewritten.startsWith('"') && rewritten.endsWith('"')) {
           rewritten = rewritten.slice(1, -1).trim();
         }
@@ -943,20 +959,19 @@ Agent's Note: "${text}"`;
       const text = req.body?.text;
       if (!text) return res.status(400).json({ success: false, error: 'Text required' });
       try {
-        let activeGroqKey = process.env.VITE_GROQ_API_KEY || 'AQ.Ab8RN6J-54eZLqYDuD80EuP-nzMFBgC4gFxwFw74oCeCsfiUHA';
+        let activeGeminiKey = process.env.VITE_GEMINI_API_KEY || '';
         try {
           const settingsRes = await axios.get(
-            `/rest/v1/whatsapp_settings?select=groq_api_key&order=id.desc&limit=1`,
+            `/rest/v1/whatsapp_settings?select=gemini_api_key&order=id.desc&limit=1`,
             { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } }
           );
-          if (settingsRes.data?.[0]?.groq_api_key && 
-             (settingsRes.data[0].groq_api_key.startsWith('AQ.') || settingsRes.data[0].groq_api_key.startsWith('AIza'))) {
-            activeGroqKey = settingsRes.data[0].groq_api_key;
+          if (settingsRes.data?.[0]?.gemini_api_key) {
+            activeGeminiKey = settingsRes.data[0].gemini_api_key;
           }
         } catch (_) {}
 
-        if (!activeGroqKey) {
-            return res.status(500).json({ success: false, error: 'Groq API Key not found' });
+        if (!activeGeminiKey) {
+            return res.status(500).json({ success: false, error: 'Gemini API Key not found' });
         }
 
         const prompt = `You are a professional customer support assistant for a Shopify brand.
@@ -970,10 +985,8 @@ Each option MUST be under 15 words and directly address the customer's last ques
 DO NOT offer discounts. DO NOT ask for order ID if they already provided it. 
 Output ONLY a JSON object containing a "suggestions" array. Example: {"suggestions": ["Hello! Let me check on that.", "Could you provide your order ID?", "Your order is on the way!"]}`;
 
-        const suggestText = await callGeminiAPI([{ role: 'user', content: prompt }], activeGroqKey, false, 800);
-        let aiRes = { data: { choices: [{ message: { content: suggestText } }] } };
-
-        let content = aiRes.data.choices[0].message.content.trim();
+        const suggestText = await callGeminiAPI([{ role: 'user', content: prompt }], activeGeminiKey, true, 800);
+        let content = (suggestText || '').trim();
         content = content.replace(/^```[a-z]*\n/i, '').replace(/\n```$/i, '').trim();
 
         // Fallback cleanup if AI wraps it in json object instead of raw array
@@ -1420,7 +1433,7 @@ ${userText}`;
         const urgencyPrompt = 'You are an urgency detector. If the user message is angry, complaining, threatening, asking for a refund, missing order, fraud, or claiming a delay, output "URGENT". Otherwise output "NORMAL". Output ONLY that single word.';
         urgencyPromise = callGeminiAPI(
           [{ role: 'system', content: urgencyPrompt }, { role: 'user', content: userText }],
-          activeGeminiKey, false, 10
+          activeGeminiKey, false, 200
         ).then(async urgency => {
           if (urgency?.trim() === 'URGENT') {
              await axios.post(
@@ -1433,14 +1446,14 @@ ${userText}`;
       }
 
       let aiReply = null;
-      let usedModel = 'gemini-2.5-flash';
+      let usedModel = 'gemini-flash-latest';
       try {
         aiReply = await callGeminiAPI(
           [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: userText }
           ],
-          activeGeminiKey, false, 600
+          activeGeminiKey, false, 800
         );
       } catch (modelErr) {
         console.error(`Gemini model failed:`, modelErr.message);
@@ -1481,7 +1494,7 @@ ${userText}`;
           { role: 'system', content: 'You are a customer segmentation bot. Analyze the customer message and output EXACTLY ONE tag from this list that best describes their intent/status: [VIP, Angry, Bargain Hunter, Needs Big Sizes, Return/Exchange, General Inquiry, Looking to Buy]. Output NOTHING ELSE. Just the tag.' },
           { role: 'user', content: userText }
         ],
-        activeGeminiKey, false, 15
+        activeGeminiKey, false, 200
       ).then(async tagRes => {
          let tag = tagRes;
          if (tag) {

@@ -2613,7 +2613,7 @@ export default function WhatsAppAIDashboard({ preSelectPhone }) {
                   </span>
                 </h4>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  Multi-model fallback chain active: <strong>Llama-3.3-70B</strong> → <strong>Llama-3.1-8B</strong> → <strong>Groq Compound</strong>.
+                  Multi-model fallback chain active: <strong>Gemini Flash Latest</strong> → <strong>Gemini 3.8 Flash</strong> → <strong>Gemini 3.7 Flash</strong> → <strong>Gemini Flash Lite</strong>.
                 </p>
               </div>
             </div>
